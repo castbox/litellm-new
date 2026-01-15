@@ -339,6 +339,12 @@ LITELLM_CHAT_PROVIDERS = [
     "openai",
     "openai_like",
     "bytez",
+    "deerapi",
+    "infiniai",
+    "bltcy",
+    "xiakexing",
+    "shubiaobiao",
+    "omnilink",
     "xai",
     "custom_openai",
     "text-completion-openai",
@@ -422,6 +428,12 @@ LITELLM_CHAT_PROVIDERS = [
     "lemonade",
     "docker_model_runner",
     "amazon_nova",
+
+
+
+
+
+
 ]
 
 LITELLM_EMBEDDING_PROVIDERS_SUPPORTING_INPUT_ARRAY_OF_TOKENS = [
@@ -564,6 +576,18 @@ openai_compatible_endpoints: List = [
     "https://ai-gateway.vercel.sh/v1",
     "https://api.inference.wandb.ai/v1",
     "https://api.clarifai.com/v2/ext/openai/v1",
+
+    "https://api.deerapi.com/v1",
+
+    "https://cloud.infini-ai.com/maas/v1",
+
+    "https://api.bltcy.ai/v1/",
+
+    "https://apiscn.openroutex.com",
+
+    "https://api.shubiaobiao.cn/v1",
+
+    "https://api.ominilink.ai/v1",
 ]
 
 
@@ -617,6 +641,18 @@ openai_compatible_providers: List = [
     "clarifai",
     "docker_model_runner",
     "ragflow",
+
+    "deerapi",
+
+    "infiniai",
+
+    "bltcy",
+
+    "xiakexing",
+
+    "shubiaobiao",
+
+    "omnilink",
 ]
 openai_text_completion_compatible_providers: List = (
     [  # providers that support `/v1/completions`

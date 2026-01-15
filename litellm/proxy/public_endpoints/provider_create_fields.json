@@ -315,6 +315,118 @@
     "default_model_placeholder": "gpt-3.5-turbo"
   },
   {
+    "provider": "BLTCY",
+    "provider_display_name": "BLTCY",
+    "litellm_provider": "bltcy",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://api.bltcy.ai/v1/",
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://api.bltcy.ai/v1/"
+      },
+      {
+        "key": "api_key",
+        "label": "BLTCY API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "DeerAPI",
+    "provider_display_name": "DeerAPI",
+    "litellm_provider": "deerapi",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://api.deerapi.com/v1",
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://api.deerapi.com/v1"
+      },
+      {
+        "key": "api_key",
+        "label": "DeerAPI API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "InfiniAI",
+    "provider_display_name": "InfiniAI",
+    "litellm_provider": "infiniai",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://cloud.infini-ai.com/maas/v1",
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://cloud.infini-ai.com/maas/v1"
+      },
+      {
+        "key": "api_key",
+        "label": "InfiniAI API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "OmniLink",
+    "provider_display_name": "OmniLink",
+    "litellm_provider": "omnilink",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://api.ominilink.ai/v1",
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://api.ominilink.ai/v1"
+      },
+      {
+        "key": "api_key",
+        "label": "OmniLink API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
     "provider": "SageMaker",
     "provider_display_name": "AWS SageMaker",
     "litellm_provider": "sagemaker_chat",
@@ -2475,6 +2587,34 @@
     "default_model_placeholder": "sap/gpt-4"
   },
   {
+    "provider": "ShuBiaoBiao",
+    "provider_display_name": "ShuBiaoBiao",
+    "litellm_provider": "shubiaobiao",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://api.shubiaobiao.cn/v1",
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://api.shubiaobiao.cn/v1"
+      },
+      {
+        "key": "api_key",
+        "label": "ShuBiaoBiao API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
     "provider": "Snowflake",
     "provider_display_name": "Snowflake",
     "litellm_provider": "snowflake",
@@ -2920,6 +3060,34 @@
       {
         "key": "api_key",
         "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "XiakeXing",
+    "provider_display_name": "XiakeXing",
+    "litellm_provider": "xiakexing",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://apiscn.openroutex.com",
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://apiscn.openroutex.com"
+      },
+      {
+        "key": "api_key",
+        "label": "XiakeXing API Key",
         "placeholder": null,
         "tooltip": null,
         "required": true,

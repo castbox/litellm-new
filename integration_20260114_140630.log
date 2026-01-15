@@ -1,0 +1,131 @@
+2026-01-14 14:06:30,767 - INFO - 开始批量集成 6/6 个供应商
+2026-01-14 14:06:30,767 - INFO - 
+==================================================
+2026-01-14 14:06:30,767 - INFO - 开始集成供应商: deerapi
+2026-01-14 14:06:30,767 - INFO - ==================================================
+2026-01-14 14:06:30,768 - INFO -   ✓ 更新文件: litellm/constants.py
+2026-01-14 14:06:30,768 - INFO -   ✓ 更新文件: litellm/types/utils.py
+2026-01-14 14:06:30,769 - INFO -   ✓ 更新文件: litellm/litellm_core_utils/get_llm_provider_logic.py
+2026-01-14 14:06:30,771 - INFO -   ✓ 更新文件: litellm/main.py
+2026-01-14 14:06:30,773 - INFO -   ✓ 添加 API key 变量: deerapi_key
+2026-01-14 14:06:30,776 - INFO -   ✓ 添加模型集合变量: deerapi_models
+2026-01-14 14:06:30,776 - INFO -   ✓ 在 add_known_models 函数中添加 deerapi 处理逻辑
+2026-01-14 14:06:30,776 - INFO -   ✓ 在 models_by_provider 字典中添加 deerapi 映射
+2026-01-14 14:06:30,776 - INFO -   ✓ 添加导入语句: from .llms.deerapi.chat.transformation import DeerAPIChatConfig
+2026-01-14 14:06:30,776 - INFO -   ✓ 更新文件: litellm/__init__.py
+2026-01-14 14:06:30,777 - INFO -   ✓ 更新UI文件: ui/litellm-dashboard/src/components/provider_info_helpers.tsx
+2026-01-14 14:06:30,778 - INFO -   ✓ 更新 provider_create_fields.json: 添加 DeerAPI
+2026-01-14 14:06:30,779 - DEBUG - 检查源文件: /Users/zhibin.an/Projects/guru-litellm/extensions/logos/deerapi.jpeg
+2026-01-14 14:06:30,779 - DEBUG - 源文件绝对路径: /Users/zhibin.an/Projects/guru-litellm/extensions/logos/deerapi.jpeg
+2026-01-14 14:06:30,779 - INFO -   ✓ 复制logo文件: /Users/zhibin.an/Projects/guru-litellm/extensions/logos/deerapi.jpeg -> ui/litellm-dashboard/public/assets/logos/deerapi.jpeg
+2026-01-14 14:06:30,779 - INFO - ✅ 供应商 deerapi 集成完成!
+2026-01-14 14:06:30,779 - INFO - 
+==================================================
+2026-01-14 14:06:30,779 - INFO - 开始集成供应商: infiniai
+2026-01-14 14:06:30,779 - INFO - ==================================================
+2026-01-14 14:06:30,780 - INFO -   ✓ 更新文件: litellm/constants.py
+2026-01-14 14:06:30,780 - INFO -   ✓ 更新文件: litellm/types/utils.py
+2026-01-14 14:06:30,781 - INFO -   ✓ 更新文件: litellm/litellm_core_utils/get_llm_provider_logic.py
+2026-01-14 14:06:30,782 - INFO -   ✓ 更新文件: litellm/main.py
+2026-01-14 14:06:30,785 - INFO -   ✓ 添加 API key 变量: infiniai_key
+2026-01-14 14:06:30,787 - INFO -   ✓ 添加模型集合变量: infiniai_models
+2026-01-14 14:06:30,787 - INFO -   ✓ 在 add_known_models 函数中添加 infiniai 处理逻辑
+2026-01-14 14:06:30,787 - INFO -   ✓ 在 models_by_provider 字典中添加 infiniai 映射
+2026-01-14 14:06:30,787 - INFO -   ✓ 添加导入语句: from .llms.infiniai.chat.transformation import InfiniAIChatConfig
+2026-01-14 14:06:30,788 - INFO -   ✓ 更新文件: litellm/__init__.py
+2026-01-14 14:06:30,788 - INFO -   ✓ 更新UI文件: ui/litellm-dashboard/src/components/provider_info_helpers.tsx
+2026-01-14 14:06:30,790 - INFO -   ✓ 更新 provider_create_fields.json: 添加 InfiniAI
+2026-01-14 14:06:30,790 - DEBUG - 检查源文件: /Users/zhibin.an/Projects/guru-litellm/extensions/logos/infiniai.png
+2026-01-14 14:06:30,790 - DEBUG - 源文件绝对路径: /Users/zhibin.an/Projects/guru-litellm/extensions/logos/infiniai.png
+2026-01-14 14:06:30,791 - INFO -   ✓ 复制logo文件: /Users/zhibin.an/Projects/guru-litellm/extensions/logos/infiniai.png -> ui/litellm-dashboard/public/assets/logos/infiniai.png
+2026-01-14 14:06:30,791 - INFO - ✅ 供应商 infiniai 集成完成!
+2026-01-14 14:06:30,791 - INFO - 
+==================================================
+2026-01-14 14:06:30,791 - INFO - 开始集成供应商: bltcy
+2026-01-14 14:06:30,791 - INFO - ==================================================
+2026-01-14 14:06:30,791 - INFO -   ✓ 更新文件: litellm/constants.py
+2026-01-14 14:06:30,792 - INFO -   ✓ 更新文件: litellm/types/utils.py
+2026-01-14 14:06:30,793 - INFO -   ✓ 更新文件: litellm/litellm_core_utils/get_llm_provider_logic.py
+2026-01-14 14:06:30,794 - INFO -   ✓ 更新文件: litellm/main.py
+2026-01-14 14:06:30,796 - INFO -   ✓ 添加 API key 变量: bltcy_key
+2026-01-14 14:06:30,799 - INFO -   ✓ 添加模型集合变量: bltcy_models
+2026-01-14 14:06:30,799 - INFO -   ✓ 在 add_known_models 函数中添加 bltcy 处理逻辑
+2026-01-14 14:06:30,799 - INFO -   ✓ 在 models_by_provider 字典中添加 bltcy 映射
+2026-01-14 14:06:30,799 - INFO -   ✓ 添加导入语句: from .llms.bltcy.chat.transformation import BLTCYChatConfig
+2026-01-14 14:06:30,799 - INFO -   ✓ 更新文件: litellm/__init__.py
+2026-01-14 14:06:30,800 - INFO -   ✓ 更新UI文件: ui/litellm-dashboard/src/components/provider_info_helpers.tsx
+2026-01-14 14:06:30,805 - INFO -   ✓ 更新 provider_create_fields.json: 添加 BLTCY
+2026-01-14 14:06:30,806 - DEBUG - 检查源文件: /Users/zhibin.an/Projects/guru-litellm/extensions/logos/bltcy.png
+2026-01-14 14:06:30,806 - DEBUG - 源文件绝对路径: /Users/zhibin.an/Projects/guru-litellm/extensions/logos/bltcy.png
+2026-01-14 14:06:30,806 - INFO -   ✓ 复制logo文件: /Users/zhibin.an/Projects/guru-litellm/extensions/logos/bltcy.png -> ui/litellm-dashboard/public/assets/logos/bltcy.png
+2026-01-14 14:06:30,806 - INFO - ✅ 供应商 bltcy 集成完成!
+2026-01-14 14:06:30,806 - INFO - 
+==================================================
+2026-01-14 14:06:30,806 - INFO - 开始集成供应商: xiakexing
+2026-01-14 14:06:30,806 - INFO - ==================================================
+2026-01-14 14:06:30,807 - INFO -   ✓ 更新文件: litellm/constants.py
+2026-01-14 14:06:30,807 - INFO -   ✓ 更新文件: litellm/types/utils.py
+2026-01-14 14:06:30,808 - INFO -   ✓ 更新文件: litellm/litellm_core_utils/get_llm_provider_logic.py
+2026-01-14 14:06:30,810 - INFO -   ✓ 更新文件: litellm/main.py
+2026-01-14 14:06:30,812 - INFO -   ✓ 添加 API key 变量: xiakexing_key
+2026-01-14 14:06:30,815 - INFO -   ✓ 添加模型集合变量: xiakexing_models
+2026-01-14 14:06:30,815 - INFO -   ✓ 在 add_known_models 函数中添加 xiakexing 处理逻辑
+2026-01-14 14:06:30,815 - INFO -   ✓ 在 models_by_provider 字典中添加 xiakexing 映射
+2026-01-14 14:06:30,815 - INFO -   ✓ 添加导入语句: from .llms.xiakexing.chat.transformation import XiakeXingChatConfig
+2026-01-14 14:06:30,815 - INFO -   ✓ 更新文件: litellm/__init__.py
+2026-01-14 14:06:30,816 - INFO -   ✓ 更新UI文件: ui/litellm-dashboard/src/components/provider_info_helpers.tsx
+2026-01-14 14:06:30,817 - INFO -   ✓ 更新 provider_create_fields.json: 添加 XiakeXing
+2026-01-14 14:06:30,817 - DEBUG - 检查源文件: /Users/zhibin.an/Projects/guru-litellm/extensions/logos/xiakexing.jpeg
+2026-01-14 14:06:30,817 - DEBUG - 源文件绝对路径: /Users/zhibin.an/Projects/guru-litellm/extensions/logos/xiakexing.jpeg
+2026-01-14 14:06:30,818 - INFO -   ✓ 复制logo文件: /Users/zhibin.an/Projects/guru-litellm/extensions/logos/xiakexing.jpeg -> ui/litellm-dashboard/public/assets/logos/xiakexing.jpeg
+2026-01-14 14:06:30,818 - INFO - ✅ 供应商 xiakexing 集成完成!
+2026-01-14 14:06:30,818 - INFO - 
+==================================================
+2026-01-14 14:06:30,818 - INFO - 开始集成供应商: shubiaobiao
+2026-01-14 14:06:30,818 - INFO - ==================================================
+2026-01-14 14:06:30,819 - INFO -   ✓ 更新文件: litellm/constants.py
+2026-01-14 14:06:30,819 - INFO -   ✓ 更新文件: litellm/types/utils.py
+2026-01-14 14:06:30,820 - INFO -   ✓ 更新文件: litellm/litellm_core_utils/get_llm_provider_logic.py
+2026-01-14 14:06:30,822 - INFO -   ✓ 更新文件: litellm/main.py
+2026-01-14 14:06:30,824 - INFO -   ✓ 添加 API key 变量: shubiaobiao_key
+2026-01-14 14:06:30,826 - INFO -   ✓ 添加模型集合变量: shubiaobiao_models
+2026-01-14 14:06:30,827 - INFO -   ✓ 在 add_known_models 函数中添加 shubiaobiao 处理逻辑
+2026-01-14 14:06:30,827 - INFO -   ✓ 在 models_by_provider 字典中添加 shubiaobiao 映射
+2026-01-14 14:06:30,827 - INFO -   ✓ 添加导入语句: from .llms.shubiaobiao.chat.transformation import ShuBiaoBiaoChatConfig
+2026-01-14 14:06:30,827 - INFO -   ✓ 更新文件: litellm/__init__.py
+2026-01-14 14:06:30,827 - INFO -   ✓ 更新UI文件: ui/litellm-dashboard/src/components/provider_info_helpers.tsx
+2026-01-14 14:06:30,829 - INFO -   ✓ 更新 provider_create_fields.json: 添加 ShuBiaoBiao
+2026-01-14 14:06:30,829 - DEBUG - 检查源文件: /Users/zhibin.an/Projects/guru-litellm/extensions/logos/shubiaobiao.png
+2026-01-14 14:06:30,829 - DEBUG - 源文件绝对路径: /Users/zhibin.an/Projects/guru-litellm/extensions/logos/shubiaobiao.png
+2026-01-14 14:06:30,830 - INFO -   ✓ 复制logo文件: /Users/zhibin.an/Projects/guru-litellm/extensions/logos/shubiaobiao.png -> ui/litellm-dashboard/public/assets/logos/shubiaobiao.png
+2026-01-14 14:06:30,830 - INFO - ✅ 供应商 shubiaobiao 集成完成!
+2026-01-14 14:06:30,830 - INFO - 
+==================================================
+2026-01-14 14:06:30,830 - INFO - 开始集成供应商: omnilink
+2026-01-14 14:06:30,830 - INFO - ==================================================
+2026-01-14 14:06:30,831 - INFO -   ✓ 更新文件: litellm/constants.py
+2026-01-14 14:06:30,831 - INFO -   ✓ 更新文件: litellm/types/utils.py
+2026-01-14 14:06:30,832 - INFO -   ✓ 更新文件: litellm/litellm_core_utils/get_llm_provider_logic.py
+2026-01-14 14:06:30,833 - INFO -   ✓ 更新文件: litellm/main.py
+2026-01-14 14:06:30,836 - INFO -   ✓ 添加 API key 变量: omnilink_key
+2026-01-14 14:06:30,838 - INFO -   ✓ 添加模型集合变量: omnilink_models
+2026-01-14 14:06:30,838 - INFO -   ✓ 在 add_known_models 函数中添加 omnilink 处理逻辑
+2026-01-14 14:06:30,838 - INFO -   ✓ 在 models_by_provider 字典中添加 omnilink 映射
+2026-01-14 14:06:30,838 - INFO -   ✓ 添加导入语句: from .llms.omnilink.chat.transformation import OmniLinkChatConfig
+2026-01-14 14:06:30,838 - INFO -   ✓ 更新文件: litellm/__init__.py
+2026-01-14 14:06:30,839 - INFO -   ✓ 更新UI文件: ui/litellm-dashboard/src/components/provider_info_helpers.tsx
+2026-01-14 14:06:30,840 - INFO -   ✓ 更新 provider_create_fields.json: 添加 OmniLink
+2026-01-14 14:06:30,840 - DEBUG - 检查源文件: /Users/zhibin.an/Projects/guru-litellm/extensions/logos/omnilink.png
+2026-01-14 14:06:30,840 - DEBUG - 源文件绝对路径: /Users/zhibin.an/Projects/guru-litellm/extensions/logos/omnilink.png
+2026-01-14 14:06:30,841 - INFO -   ✓ 复制logo文件: /Users/zhibin.an/Projects/guru-litellm/extensions/logos/omnilink.png -> ui/litellm-dashboard/public/assets/logos/omnilink.png
+2026-01-14 14:06:30,841 - INFO - ✅ 供应商 omnilink 集成完成!
+2026-01-14 14:06:30,841 - INFO - 
+==================================================
+2026-01-14 14:06:30,842 - INFO - 集成报告
+2026-01-14 14:06:30,842 - INFO - ==================================================
+2026-01-14 14:06:30,842 - INFO - 总供应商数: 6
+2026-01-14 14:06:30,842 - INFO - 启用的供应商: 6
+2026-01-14 14:06:30,842 - INFO - 成功集成: 6
+2026-01-14 14:06:30,842 - INFO - 失败: 0
+2026-01-14 14:06:30,842 - INFO - 跳过: 0
+2026-01-14 14:06:30,842 - INFO - ✅ 所有启用的供应商已成功集成!
