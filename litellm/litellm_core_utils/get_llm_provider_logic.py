@@ -285,6 +285,46 @@ def get_llm_provider(  # noqa: PLR0915
                     elif endpoint == "https://api.inference.wandb.ai/v1":
                         custom_llm_provider = "wandb"
                         dynamic_api_key = get_secret_str("WANDB_API_KEY")
+                    elif endpoint == "api.deerapi.com/v1":
+                        custom_llm_provider = "deerapi"
+                        dynamic_api_key = get_secret_str("DEERAPI_API_KEY") or get_secret_str("DEER_API_KEY")
+                    elif endpoint == "cloud.infini-ai.com/maas/v1":
+                        custom_llm_provider = "infiniai"
+                        dynamic_api_key = get_secret_str("INFINIAI_API_KEY") or get_secret_str("INFINIAI_API_KEY")
+                    elif endpoint == "api.bltcy.ai/v1":
+                        custom_llm_provider = "bltcy"
+                        dynamic_api_key = get_secret_str("BLTCY_API_KEY") or get_secret_str("BLTCY_API_KEY")
+                    elif endpoint == "apiscn.openroutex.com":
+                        custom_llm_provider = "xiakexing"
+                        dynamic_api_key = get_secret_str("XIAKEXING_API_KEY") or get_secret_str("XIAKEXING_API_KEY")
+                    elif endpoint == "api.shubiaobiao.cn/v1":
+                        custom_llm_provider = "shubiaobiao"
+                        dynamic_api_key = get_secret_str("SHUBIAOBIAO_API_KEY") or get_secret_str("SHUBIAOBIAO_API_KEY")
+                    elif endpoint == "api-ai.ominilink.ai":
+                        custom_llm_provider = "omnilink"
+                        dynamic_api_key = get_secret_str("OMNILINK_API_KEY") or get_secret_str("OMNILINK_API_KEY")
+                    elif endpoint == "llm.onerouter.pro/v1":
+                        custom_llm_provider = "onerouter"
+                        dynamic_api_key = get_secret_str("ONEROUTER_API_KEY") or get_secret_str("ONEROUTER_API_KEY")
+                    elif endpoint == "funcloud.ai/v1":
+                        custom_llm_provider = "funcloud"
+                        dynamic_api_key = get_secret_str("FUNCLOUD_API_KEY") or get_secret_str("FUNCLOUD_API_KEY")
+                    elif endpoint == "ai.comfly.chat/v1":
+                        custom_llm_provider = "comflychat"
+                        dynamic_api_key = get_secret_str("COMFLYCHAT_API_KEY") or get_secret_str("COMFLYCHAT_API_KEY")
+                    elif endpoint == "api.apimart.ai/v1":
+                        custom_llm_provider = "apimart"
+                        dynamic_api_key = get_secret_str("APIMART_API_KEY") or get_secret_str("MART_API_KEY")
+
+
+
+
+
+
+
+
+
+
 
                     if api_base is not None and not isinstance(api_base, str):
                         raise Exception(
@@ -416,6 +456,36 @@ def get_llm_provider(  # noqa: PLR0915
             custom_llm_provider = "lemonade"
         elif model.startswith("clarifai/"):
             custom_llm_provider = "clarifai"
+        elif model.startswith("deerapi/"):
+            custom_llm_provider = "deerapi"
+
+        elif model.startswith("infiniai/"):
+            custom_llm_provider = "infiniai"
+
+        elif model.startswith("bltcy/"):
+            custom_llm_provider = "bltcy"
+
+        elif model.startswith("xiakexing/"):
+            custom_llm_provider = "xiakexing"
+
+        elif model.startswith("shubiaobiao/"):
+            custom_llm_provider = "shubiaobiao"
+
+        elif model.startswith("omnilink/"):
+            custom_llm_provider = "omnilink"
+
+        elif model.startswith("onerouter/"):
+            custom_llm_provider = "onerouter"
+
+        elif model.startswith("funcloud/"):
+            custom_llm_provider = "funcloud"
+
+        elif model.startswith("comflychat/"):
+            custom_llm_provider = "comflychat"
+
+        elif model.startswith("apimart/"):
+            custom_llm_provider = "apimart"
+
         elif model.startswith("amazon_nova"):
             custom_llm_provider = "amazon_nova"
         elif model.startswith("sap/"):
@@ -865,6 +935,76 @@ def _get_openai_compatible_provider_info(  # noqa: PLR0915
             api_base,
             dynamic_api_key,
         ) = litellm.LemonadeChatConfig()._get_openai_compatible_provider_info(
+            api_base, api_key
+        )
+    elif custom_llm_provider == "deerapi":
+        (
+            api_base,
+            dynamic_api_key,
+        ) = litellm.DeerAPIChatConfig()._get_openai_compatible_provider_info(
+            api_base, api_key
+        )
+    elif custom_llm_provider == "infiniai":
+        (
+            api_base,
+            dynamic_api_key,
+        ) = litellm.InfiniAIChatConfig()._get_openai_compatible_provider_info(
+            api_base, api_key
+        )
+    elif custom_llm_provider == "bltcy":
+        (
+            api_base,
+            dynamic_api_key,
+        ) = litellm.BLTCYChatConfig()._get_openai_compatible_provider_info(
+            api_base, api_key
+        )
+    elif custom_llm_provider == "xiakexing":
+        (
+            api_base,
+            dynamic_api_key,
+        ) = litellm.XiakeXingChatConfig()._get_openai_compatible_provider_info(
+            api_base, api_key
+        )
+    elif custom_llm_provider == "shubiaobiao":
+        (
+            api_base,
+            dynamic_api_key,
+        ) = litellm.ShuBiaoBiaoChatConfig()._get_openai_compatible_provider_info(
+            api_base, api_key
+        )
+    elif custom_llm_provider == "omnilink":
+        (
+            api_base,
+            dynamic_api_key,
+        ) = litellm.OmniLinkChatConfig()._get_openai_compatible_provider_info(
+            api_base, api_key
+        )
+    elif custom_llm_provider == "onerouter":
+        (
+            api_base,
+            dynamic_api_key,
+        ) = litellm.OneRouterChatConfig()._get_openai_compatible_provider_info(
+            api_base, api_key
+        )
+    elif custom_llm_provider == "funcloud":
+        (
+            api_base,
+            dynamic_api_key,
+        ) = litellm.FunCloudChatConfig()._get_openai_compatible_provider_info(
+            api_base, api_key
+        )
+    elif custom_llm_provider == "comflychat":
+        (
+            api_base,
+            dynamic_api_key,
+        ) = litellm.ComflyChatChatConfig()._get_openai_compatible_provider_info(
+            api_base, api_key
+        )
+    elif custom_llm_provider == "apimart":
+        (
+            api_base,
+            dynamic_api_key,
+        ) = litellm.ApiMartChatConfig()._get_openai_compatible_provider_info(
             api_base, api_key
         )
     elif custom_llm_provider == "clarifai":

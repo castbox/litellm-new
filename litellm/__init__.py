@@ -249,6 +249,16 @@ ovhcloud_key: Optional[str] = None
 lemonade_key: Optional[str] = None
 sap_service_key: Optional[str] = None
 amazon_nova_api_key: Optional[str] = None
+deerapi_key: Optional[str] = None
+infiniai_key: Optional[str] = None
+bltcy_key: Optional[str] = None
+xiakexing_key: Optional[str] = None
+shubiaobiao_key: Optional[str] = None
+omnilink_key: Optional[str] = None
+onerouter_key: Optional[str] = None
+funcloud_key: Optional[str] = None
+comflychat_key: Optional[str] = None
+apimart_key: Optional[str] = None
 common_cloud_provider_auth_params: dict = {
     "params": ["project", "region_name", "token"],
     "providers": ["vertex_ai", "bedrock", "watsonx", "azure", "vertex_ai_beta"],
@@ -560,6 +570,16 @@ docker_model_runner_models: Set = set()
 amazon_nova_models: Set = set()
 stability_models: Set = set()
 github_copilot_models: Set = set()
+deerapi_models: Set = set()
+infiniai_models: Set = set()
+bltcy_models: Set = set()
+xiakexing_models: Set = set()
+shubiaobiao_models: Set = set()
+omnilink_models: Set = set()
+onerouter_models: Set = set()
+funcloud_models: Set = set()
+comflychat_models: Set = set()
+apimart_models: Set = set()
 
 
 def is_bedrock_pricing_only_model(key: str) -> bool:
@@ -808,6 +828,26 @@ def add_known_models():
             stability_models.add(key)
         elif value.get("litellm_provider") == "github_copilot":
             github_copilot_models.add(key)
+        elif value.get("litellm_provider") == "deerapi":
+            deerapi_models.add(key)
+        elif value.get("litellm_provider") == "infiniai":
+            infiniai_models.add(key)
+        elif value.get("litellm_provider") == "bltcy":
+            bltcy_models.add(key)
+        elif value.get("litellm_provider") == "xiakexing":
+            xiakexing_models.add(key)
+        elif value.get("litellm_provider") == "shubiaobiao":
+            shubiaobiao_models.add(key)
+        elif value.get("litellm_provider") == "omnilink":
+            omnilink_models.add(key)
+        elif value.get("litellm_provider") == "onerouter":
+            onerouter_models.add(key)
+        elif value.get("litellm_provider") == "funcloud":
+            funcloud_models.add(key)
+        elif value.get("litellm_provider") == "comflychat":
+            comflychat_models.add(key)
+        elif value.get("litellm_provider") == "apimart":
+            apimart_models.add(key)
 
 
 add_known_models()
@@ -1012,6 +1052,16 @@ models_by_provider: dict = {
     "amazon_nova": amazon_nova_models,
     "stability": stability_models,
     "github_copilot": github_copilot_models,
+    "deerapi": deerapi_models,
+    "infiniai": infiniai_models,
+    "bltcy": bltcy_models,
+    "xiakexing": xiakexing_models,
+    "shubiaobiao": shubiaobiao_models,
+    "omnilink": omnilink_models,
+    "onerouter": onerouter_models,
+    "funcloud": funcloud_models,
+    "comflychat": comflychat_models,
+    "apimart": apimart_models,
 }
 
 # mapping for those models which have larger equivalents
@@ -1066,6 +1116,12 @@ from .utils import client
 from .llms.custom_llm import CustomLLM
 from .llms.anthropic.common_utils import AnthropicModelInfo
 from .llms.ai21.chat.transformation import AI21ChatConfig, AI21ChatConfig as AI21Config
+from .llms.apimart.chat.transformation import ApiMartChatConfig
+from .llms.bltcy.chat.transformation import BLTCYChatConfig
+from .llms.comflychat.chat.transformation import ComflyChatChatConfig
+from .llms.deerapi.chat.transformation import DeerAPIChatConfig
+from .llms.funcloud.chat.transformation import FunCloudChatConfig
+from .llms.infiniai.chat.transformation import InfiniAIChatConfig
 from .llms.meta_llama.chat.transformation import LlamaAPIConfig
 from .llms.anthropic.experimental_pass_through.messages.transformation import (
     AnthropicMessagesConfig,
@@ -1112,6 +1168,8 @@ from .llms.vertex_ai.vertex_ai_partner_models.ai21.transformation import (
 from .llms.ollama.chat.transformation import OllamaChatConfig
 from .llms.ollama.completion.transformation import OllamaConfig
 from .llms.sagemaker.completion.transformation import SagemakerConfig
+from .llms.omnilink.chat.transformation import OmniLinkChatConfig
+from .llms.onerouter.chat.transformation import OneRouterChatConfig
 from .llms.sagemaker.chat.transformation import SagemakerChatConfig
 from .llms.bedrock.chat.invoke_handler import (
     AmazonCohereChatConfig,
@@ -1263,8 +1321,10 @@ from .llms.fireworks_ai.embed.fireworks_ai_transformation import (
 )
 from .llms.friendliai.chat.transformation import FriendliaiChatConfig
 from .llms.jina_ai.embedding.transformation import JinaAIEmbeddingConfig
+from .llms.shubiaobiao.chat.transformation import ShuBiaoBiaoChatConfig
 from .llms.xai.chat.transformation import XAIChatConfig
 from .llms.xai.common_utils import XAIModelInfo
+from .llms.xiakexing.chat.transformation import XiakeXingChatConfig
 from .llms.zai.chat.transformation import ZAIChatConfig
 from .llms.aiml.chat.transformation import AIMLChatConfig
 from .llms.volcengine.chat.transformation import (
