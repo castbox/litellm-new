@@ -349,6 +349,7 @@ LITELLM_CHAT_PROVIDERS = [
     "funcloud",
     "comflychat",
     "apimart",
+    "toapis",
     "xai",
     "custom_openai",
     "text-completion-openai",
@@ -604,6 +605,8 @@ openai_compatible_endpoints: List = [
     "https://ai.comfly.chat/v1",
 
     "https://api.apimart.ai/v1",
+
+    "https://toapis.com/v1",
 ]
 
 
@@ -677,6 +680,8 @@ openai_compatible_providers: List = [
     "comflychat",
 
     "apimart",
+
+    "toapis",
 ]
 openai_text_completion_compatible_providers: List = (
     [  # providers that support `/v1/completions`

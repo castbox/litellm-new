@@ -259,6 +259,7 @@ onerouter_key: Optional[str] = None
 funcloud_key: Optional[str] = None
 comflychat_key: Optional[str] = None
 apimart_key: Optional[str] = None
+toapis_key: Optional[str] = None
 common_cloud_provider_auth_params: dict = {
     "params": ["project", "region_name", "token"],
     "providers": ["vertex_ai", "bedrock", "watsonx", "azure", "vertex_ai_beta"],
@@ -580,6 +581,7 @@ onerouter_models: Set = set()
 funcloud_models: Set = set()
 comflychat_models: Set = set()
 apimart_models: Set = set()
+toapis_models: Set = set()
 
 
 def is_bedrock_pricing_only_model(key: str) -> bool:
@@ -848,6 +850,8 @@ def add_known_models():
             comflychat_models.add(key)
         elif value.get("litellm_provider") == "apimart":
             apimart_models.add(key)
+        elif value.get("litellm_provider") == "toapis":
+            toapis_models.add(key)
 
 
 add_known_models()
@@ -1062,6 +1066,7 @@ models_by_provider: dict = {
     "funcloud": funcloud_models,
     "comflychat": comflychat_models,
     "apimart": apimart_models,
+    "toapis": toapis_models,
 }
 
 # mapping for those models which have larger equivalents
@@ -1117,6 +1122,7 @@ from .llms.custom_llm import CustomLLM
 from .llms.anthropic.common_utils import AnthropicModelInfo
 from .llms.ai21.chat.transformation import AI21ChatConfig, AI21ChatConfig as AI21Config
 from .llms.apimart.chat.transformation import ApiMartChatConfig
+from .llms.toapis.chat.transformation import ToAPIsChatConfig
 from .llms.bltcy.chat.transformation import BLTCYChatConfig
 from .llms.comflychat.chat.transformation import ComflyChatChatConfig
 from .llms.deerapi.chat.transformation import DeerAPIChatConfig

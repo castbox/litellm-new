@@ -4001,6 +4001,40 @@ def completion(  # type: ignore # noqa: PLR0915
                 provider_config=provider_config,
             )
 
+        elif custom_llm_provider == "toapis":
+            api_key = (
+                api_key
+                or litellm.toapis_key
+                or get_secret_str("TOAPIS_API_KEY")
+                or litellm.api_key
+            )
+
+            api_base = (
+                api_base
+                or litellm.api_base
+                or get_secret_str("TOAPIS_API_BASE")
+                or "https://toapis.com/v1"
+            )
+
+            response = base_llm_http_handler.completion(
+                model=model,
+                messages=messages,
+                headers=headers,
+                model_response=model_response,
+                api_key=api_key,
+                api_base=api_base,
+                acompletion=acompletion,
+                logging_obj=logging,
+                optional_params=optional_params,
+                litellm_params=litellm_params,
+                timeout=timeout,  # type: ignore
+                client=client,
+                custom_llm_provider=custom_llm_provider,
+                encoding=encoding,
+                stream=stream,
+                provider_config=provider_config,
+            )
+
         elif custom_llm_provider == "comflychat":
             api_key = (
                 api_key

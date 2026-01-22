@@ -2966,6 +2966,7 @@ class LlmProviders(str, Enum):
     FUNCLOUD = "funcloud"
     COMFLYCHAT = "comflychat"
     APIMART = "apimart"
+    TOAPIS = "toapis"
     SAMBANOVA = "sambanova"
     MARITALK = "maritalk"
     VOYAGE = "voyage"

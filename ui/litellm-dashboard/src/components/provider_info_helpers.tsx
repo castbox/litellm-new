@@ -53,7 +53,8 @@ A2A_Agent = "A2A Agent",
   OneRouter = "OneRouter",
   FunCloud = "FunCloud",
   ComflyChat = "ComflyChat",
-  ApiMart = "ApiMart"
+  ApiMart = "ApiMart",
+  ToAPIs = "ToAPIs"
 }
 
 export const provider_map: Record<string, string> = {
@@ -110,7 +111,8 @@ A2A_Agent: "a2a_agent",
     OneRouter: "onerouter",
     FunCloud: "funcloud",
     ComflyChat: "comflychat",
-    ApiMart: "apimart"
+    ApiMart: "apimart",
+    ToAPIs: "toapis"
 };
 
 const asset_logos_folder = "../ui/assets/logos/";
@@ -169,7 +171,8 @@ export const providerLogoMap: Record<string, string> = {
     [Providers.OneRouter]: `${asset_logos_folder}onerouter.png`,
     [Providers.FunCloud]: `${asset_logos_folder}funcloud.png`,
     [Providers.ComflyChat]: `${asset_logos_folder}comflychat.png`,
-    [Providers.ApiMart]: `${asset_logos_folder}apimart.png`
+    [Providers.ApiMart]: `${asset_logos_folder}apimart.png`,
+    [Providers.ToAPIs]: `${asset_logos_folder}toapis.png`
 };
 
 export const getProviderLogoAndName = (providerValue: string): { logo: string; displayName: string } => {

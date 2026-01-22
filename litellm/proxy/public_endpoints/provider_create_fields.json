@@ -130,6 +130,34 @@
     "default_model_placeholder": "gpt-3.5-turbo"
   },
   {
+    "provider": "ToAPIs",
+    "provider_display_name": "ToAPIs",
+    "litellm_provider": "toapis",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://toapis.com/v1",
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://toapis.com/v1"
+      },
+      {
+        "key": "api_key",
+        "label": "ToAPIs API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
     "provider": "Bedrock",
     "provider_display_name": "Amazon Bedrock",
     "litellm_provider": "bedrock",

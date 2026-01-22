@@ -315,6 +315,9 @@ def get_llm_provider(  # noqa: PLR0915
                     elif endpoint == "api.apimart.ai/v1":
                         custom_llm_provider = "apimart"
                         dynamic_api_key = get_secret_str("APIMART_API_KEY") or get_secret_str("MART_API_KEY")
+                    elif endpoint == "toapis.com/v1":
+                        custom_llm_provider = "toapis"
+                        dynamic_api_key = get_secret_str("TOAPIS_API_KEY")
 
 
 
@@ -491,6 +494,9 @@ def get_llm_provider(  # noqa: PLR0915
 
         elif model.startswith("apimart/"):
             custom_llm_provider = "apimart"
+
+        elif model.startswith("toapis/"):
+            custom_llm_provider = "toapis"
 
         elif model.startswith("amazon_nova"):
             custom_llm_provider = "amazon_nova"
@@ -1011,6 +1017,13 @@ def _get_openai_compatible_provider_info(  # noqa: PLR0915
             api_base,
             dynamic_api_key,
         ) = litellm.ApiMartChatConfig()._get_openai_compatible_provider_info(
+            api_base, api_key
+        )
+    elif custom_llm_provider == "toapis":
+        (
+            api_base,
+            dynamic_api_key,
+        ) = litellm.ToAPIsChatConfig()._get_openai_compatible_provider_info(
             api_base, api_key
         )
     elif custom_llm_provider == "clarifai":
