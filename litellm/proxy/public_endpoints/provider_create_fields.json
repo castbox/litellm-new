@@ -427,6 +427,62 @@
     "default_model_placeholder": "gpt-3.5-turbo"
   },
   {
+    "provider": "deerapi_gemini",
+    "provider_display_name": "DeerAPI Gemini",
+    "litellm_provider": "deerapi_gemini",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://api.deerapi.com/v1beta",
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://api.deerapi.com/v1beta"
+      },
+      {
+        "key": "api_key",
+        "label": "DeerAPI Gemini API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gemini-2.0-flash"
+  },
+  {
+    "provider": "ominilink_gemini",
+    "provider_display_name": "OminiLink Gemini",
+    "litellm_provider": "ominilink_gemini",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://api.ominilink.ai/v1beta",
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://api.ominilink.ai/v1beta"
+      },
+      {
+        "key": "api_key",
+        "label": "OminiLink Gemini API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gemini-2.0-flash"
+  },
+  {
     "provider": "FunCloud",
     "provider_display_name": "FunCloud",
     "litellm_provider": "funcloud",

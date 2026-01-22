@@ -459,6 +459,12 @@ def get_llm_provider(  # noqa: PLR0915
         elif model.startswith("deerapi/"):
             custom_llm_provider = "deerapi"
 
+        elif model.startswith("deerapi_gemini/"):
+            custom_llm_provider = "deerapi_gemini"
+
+        elif model.startswith("ominilink_gemini/"):
+            custom_llm_provider = "ominilink_gemini"
+
         elif model.startswith("infiniai/"):
             custom_llm_provider = "infiniai"
 

@@ -1148,6 +1148,8 @@ from .llms.gemini.chat.transformation import (
     GoogleAIStudioGeminiConfig,
     GoogleAIStudioGeminiConfig as GeminiConfig,  # aliased to maintain backwards compatibility
 )
+from .llms.deerapi_gemini.chat.transformation import DeerAPIGeminiConfig
+from .llms.ominilink_gemini.chat.transformation import OminiLinkGeminiConfig
 
 
 from .llms.vertex_ai.vertex_embeddings.transformation import (
