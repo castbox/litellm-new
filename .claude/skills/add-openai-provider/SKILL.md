@@ -366,6 +366,24 @@ poetry run litellm --config ../guru-litellm/configs/proxy_config_local.yaml --de
 
 **为什么**: 启动本地服务验证新供应商是否正常工作，`--debug --detailed_debug` 可以查看详细日志便于排查问题。
 
+### 10. 项目打包和推送
+
+```bash
+# 将 TAG 替换为实际版本号（如 v1.0.0、20250123）
+export TAG=your-tag
+
+# 构建镜像（linux/arm64）
+docker build --platform=linux/arm64 -t 851725654066.dkr.ecr.us-east-1.amazonaws.com/saas-guru/litellm:$TAG .
+
+# 登录 ECR（如未登录）
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 851725654066.dkr.ecr.us-east-1.amazonaws.com
+
+# 推送到 ECR
+docker push 851725654066.dkr.ecr.us-east-1.amazonaws.com/saas-guru/litellm:$TAG
+```
+
+**为什么**: 将 LiteLLM 项目打包为 linux/arm64 镜像并推送到 AWS ECR，供部署使用。在项目根目录执行 `docker build`。
+
 ## 常见问题
 
 ### 模型从数据库加载后不显示
