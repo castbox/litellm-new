@@ -44,6 +44,33 @@ description: 添加 OpenAI 兼容协议的供应商
 - 新供应商使用 OpenAI 兼容协议（`/v1/chat/completions` 等标准端点）
 - 需要自定义 API Base 和 API Key 获取逻辑
 
+## 重要修复
+
+在开始添加新供应商之前，如果项目存在 issue #19184 相关的 bug，需要先修复：
+
+**文件: `litellm/llms/custom_httpx/aiohttp_transport.py`**
+
+在 `_make_aiohttp_request` 方法中，移除 `ClientTimeout` 的 `total` 参数：
+
+```python
+# 修复前
+timeout=ClientTimeout(
+    total=timeout.get("read"),  # ❌ 需要移除这一行
+    sock_connect=timeout.get("connect"),
+    sock_read=timeout.get("read"),
+    connect=timeout.get("pool"),
+),
+
+# 修复后
+timeout=ClientTimeout(
+    sock_connect=timeout.get("connect"),
+    sock_read=timeout.get("read"),
+    connect=timeout.get("pool"),
+),
+```
+
+**为什么**: `stream_timeout` 应该只控制单个 chunk 的超时，而不是整个 stream 的持续时间。设置 `total` 会导致整个流在读取超时后中断，而不是只对单个 chunk 应用超时。
+
 ## 步骤
 
 ### 1. 添加到常量配置
