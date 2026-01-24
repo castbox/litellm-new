@@ -319,14 +319,25 @@ class AnthropicChatCompletion(BaseLLM):
         is_vertex_request: bool = optional_params.pop("is_vertex_request", False)
         _is_function_call = False
         messages = copy.deepcopy(messages)
-        headers = AnthropicConfig().validate_environment(
-            api_key=api_key,
-            headers=headers,
-            model=model,
-            messages=messages,
-            optional_params={**optional_params, "is_vertex_request": is_vertex_request},
-            litellm_params=litellm_params,
-        )
+
+        # 根据 custom_llm_provider 获取正确的配置类来验证环境
+        # 某些供应商（如 funcloud_claude）使用 Bearer Token 认证，不需要 x-api-key
+        if custom_llm_provider == "anthropic":
+            headers = AnthropicConfig().validate_environment(
+                api_key=api_key,
+                headers=headers,
+                model=model,
+                messages=messages,
+                optional_params={**optional_params, "is_vertex_request": is_vertex_request},
+                litellm_params=litellm_params,
+            )
+        else:
+            # 对于其他使用 Anthropic 协议的供应商，跳过 AnthropicConfig 的验证
+            # 这些供应商在 main.py 中已经设置了正确的认证 headers
+            if "content-type" not in headers:
+                headers["content-type"] = "application/json"
+            if "accept" not in headers:
+                headers["accept"] = "application/json"
 
         config = ProviderConfigManager.get_provider_chat_config(
             model=model,

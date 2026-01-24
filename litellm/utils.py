@@ -7206,6 +7206,10 @@ class ProviderConfigManager:
             return litellm.ClarifaiConfig()
         elif litellm.LlmProviders.ANTHROPIC == provider:
             return litellm.AnthropicConfig()
+        elif litellm.LlmProviders.FUNCLOUD_CLAUDE == provider:
+            return litellm.AnthropicConfig()
+        elif litellm.LlmProviders.DEERAPI_CLAUDE == provider:
+            return litellm.AnthropicConfig()
         elif litellm.LlmProviders.ANTHROPIC_TEXT == provider:
             return litellm.AnthropicTextConfig()
         elif litellm.LlmProviders.VERTEX_AI_BETA == provider:
@@ -7523,6 +7527,18 @@ class ProviderConfigManager:
                 )
 
                 return AzureAnthropicMessagesConfig()
+        elif litellm.LlmProviders.FUNCLOUD_CLAUDE == provider:
+            from litellm.llms.funcloud_claude.messages.transformation import (
+                FuncloudClaudeMessagesConfig,
+            )
+
+            return FuncloudClaudeMessagesConfig()
+        elif litellm.LlmProviders.DEERAPI_CLAUDE == provider:
+            from litellm.llms.deerapi_claude.messages.transformation import (
+                DeerapiClaudeMessagesConfig,
+            )
+
+            return DeerapiClaudeMessagesConfig()
         return None
 
     @staticmethod

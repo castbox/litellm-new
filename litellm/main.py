@@ -2564,6 +2564,100 @@ def completion(  # type: ignore # noqa: PLR0915
                     original_response=response,
                 )
             response = response
+        elif custom_llm_provider == "funcloud_claude":
+            api_key = (
+                api_key
+                or litellm.api_key
+                or get_secret("FUNCLOUD_CLAUDE_API_KEY")
+            )
+            api_base = (
+                api_base
+                or litellm.api_base
+                or get_secret("FUNCLOUD_CLAUDE_API_BASE")
+                or "https://funcloud.ai/v1/model/chat/completions"
+            )
+
+            # FunCloud Claude 使用 Bearer Token 认证
+            if headers is None:
+                headers = {}
+            if api_key and "Authorization" not in headers:
+                headers["Authorization"] = f"Bearer {api_key}"
+                api_key = None  # 清空 api_key，避免 anthropic_chat_completions 再设置 x-api-key
+
+            response = anthropic_chat_completions.completion(
+                model=model,
+                messages=messages,
+                api_base=api_base,
+                acompletion=acompletion,
+                custom_prompt_dict=litellm.custom_prompt_dict,
+                model_response=model_response,
+                print_verbose=print_verbose,
+                optional_params=optional_params,
+                litellm_params=litellm_params,
+                logger_fn=logger_fn,
+                encoding=_get_encoding(),
+                api_key=api_key,
+                logging_obj=logging,
+                headers=headers,
+                timeout=timeout,
+                client=client,
+                custom_llm_provider=custom_llm_provider,
+            )
+            if optional_params.get("stream", False) or acompletion is True:
+                ## LOGGING
+                logging.post_call(
+                    input=messages,
+                    api_key=api_key,
+                    original_response=response,
+                )
+            response = response
+        elif custom_llm_provider == "deerapi_claude":
+            api_key = (
+                api_key
+                or litellm.api_key
+                or get_secret("DEERAPI_CLAUDE_API_KEY")
+            )
+            api_base = (
+                api_base
+                or litellm.api_base
+                or get_secret("DEERAPI_CLAUDE_API_BASE")
+                or "https://api.deerapi.com/v1/messages"
+            )
+
+            # DeerAPI Claude 使用 Bearer Token 认证
+            if headers is None:
+                headers = {}
+            if api_key and "Authorization" not in headers:
+                headers["Authorization"] = f"Bearer {api_key}"
+                api_key = None  # 清空 api_key，避免 anthropic_chat_completions 再设置 x-api-key
+
+            response = anthropic_chat_completions.completion(
+                model=model,
+                messages=messages,
+                api_base=api_base,
+                acompletion=acompletion,
+                custom_prompt_dict=litellm.custom_prompt_dict,
+                model_response=model_response,
+                print_verbose=print_verbose,
+                optional_params=optional_params,
+                litellm_params=litellm_params,
+                logger_fn=logger_fn,
+                encoding=_get_encoding(),
+                api_key=api_key,
+                logging_obj=logging,
+                headers=headers,
+                timeout=timeout,
+                client=client,
+                custom_llm_provider=custom_llm_provider,
+            )
+            if optional_params.get("stream", False) or acompletion is True:
+                ## LOGGING
+                logging.post_call(
+                    input=messages,
+                    api_key=api_key,
+                    original_response=response,
+                )
+            response = response
         elif custom_llm_provider == "nlp_cloud":
             nlp_cloud_key = (
                 api_key
