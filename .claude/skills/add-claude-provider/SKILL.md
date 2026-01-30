@@ -40,6 +40,11 @@ BaseAnthropicMessagesConfig (抽象基类)
    - 例如：`my_provider.png`、`my_provider.svg`
    - 放在 `ui/litellm-dashboard/public/assets/logos/` 目录
 
+5. **后端是否仅支持 base64 图片**（例如后端为 Bedrock）
+   - 若后端**不支持 image URL**（只接受 base64），需要将消息中的图片 URL 转为 base64，涉及两处：
+     - **completion() 路径**：在 `anthropic_messages_pt` 中通过 `llm_provider` 触发转换（见下方「图片 URL 转 base64」）
+     - **/v1/messages 直连路径**：在供应商的 MessagesConfig 中重写 `transform_anthropic_messages_request`，在发送前把 `type: image, source: { type: url }` 转为 base64
+
 ## 前置条件
 
 - 新供应商使用 Anthropic 兼容协议（请求/响应格式与 Anthropic Messages API 一致）
@@ -193,6 +198,40 @@ class {ProviderName}MessagesConfig(AnthropicMessagesConfig):
 | API Key | `api_key` | `{PROVIDER}_API_KEY` | - |
 
 **注意**: `api_base` 应该包含完整的 API 路径，例如 `https://api.provider.com/v1/messages`。
+
+#### 1.1 后端为 Bedrock 或仅支持 base64 图片时（可选）
+
+若后端**不支持 image URL**（例如后端是 Bedrock），需要把消息中的图片链接转成 base64，否则请求会失败。涉及两条调用路径：
+
+**路径 A：completion()**
+
+- 请求会走 `anthropic_chat_completions.completion()` → `AnthropicConfig.transform_request()` → `anthropic_messages_pt()`。
+- 在 **`litellm/litellm_core_utils/prompt_templates/factory.py`** 的 `anthropic_messages_pt()` 里，已有逻辑根据 `llm_provider` 设置 `is_bedrock_invoke`，从而在 `create_anthropic_image_param(..., is_bedrock_invoke=True)` 时把 `image_url` 转成 base64。
+- 需要把新供应商加入该判断（与 `funcloud_claude`、`deerapi_claude` 并列），例如：
+  ```python
+  is_bedrock_invoke = (
+      model.lower().startswith("invoke/")
+      or llm_provider in ("funcloud_claude", "deerapi_claude", "{provider_name}")
+  )
+  ```
+- 同时需保证 **`litellm/llms/anthropic/chat/transformation.py`** 里调用 `anthropic_messages_pt()` 时传入的是**实际**的 `custom_llm_provider`，而不是写死的 `"anthropic"`，否则上述判断不会生效。当前实现应类似：
+  ```python
+  llm_provider = (litellm_params or {}).get("custom_llm_provider") or "anthropic"
+  anthropic_messages = anthropic_messages_pt(
+      model=model,
+      messages=messages,
+      llm_provider=llm_provider,
+  )
+  ```
+  若你 fork 的代码里仍是 `llm_provider="anthropic"`，请改为从 `litellm_params` 读取。
+
+**路径 B：Anthropic Messages 直连（/v1/messages）**
+
+- 请求会走 `anthropic_messages_provider_config.transform_anthropic_messages_request()`。
+- 在**供应商的 MessagesConfig**（即步骤 1 的 `transformation.py`）中重写 `transform_anthropic_messages_request`：先调父类得到请求体，再遍历 `request["messages"]`，对 `type == "image"` 且 `source.type == "url"` 的块，用 `convert_url_to_base64(url)` 和 `convert_to_anthropic_image_obj()` 转成 base64，并替换为 `source: { type: "base64", media_type, data }`。
+- 参考实现：[litellm/llms/funcloud_claude/messages/transformation.py](litellm/llms/funcloud_claude/messages/transformation.py) 中的 `FuncloudClaudeMessagesConfig.transform_anthropic_messages_request`。
+- 需在文件顶部增加导入：`from litellm.litellm_core_utils.prompt_templates.factory import convert_to_anthropic_image_obj` 与 `from litellm.litellm_core_utils.prompt_templates.image_handling import convert_url_to_base64`。
+- 若转换某张图失败（如 URL 不可达），可打 error 日志并 `raise`，避免把仍带 URL 的请求发给不支持 URL 的后端。
 
 ### 2. 注册到 LlmProviders 枚举
 
@@ -497,10 +536,19 @@ response = litellm.completion(
 1. 检查供应商的流式响应格式是否与 Anthropic 标准一致
 2. 如果格式不同，需要覆盖 `get_async_streaming_response_iterator` 方法
 
+### 图片未转成 base64（后端为 Bedrock 或仅支持 base64 时）
+
+- **走的是 completion()**：确认两处：
+  1. `litellm/llms/anthropic/chat/transformation.py` 中调用 `anthropic_messages_pt()` 时使用的是 `litellm_params.get("custom_llm_provider")`，而不是写死的 `"anthropic"`。
+  2. `litellm/litellm_core_utils/prompt_templates/factory.py` 里 `anthropic_messages_pt()` 中 `is_bedrock_invoke` 的判断包含你的供应商名（如 `llm_provider in (..., "{provider_name}")`）。
+- **走的是 /v1/messages 直连**：确认供应商的 MessagesConfig 重写了 `transform_anthropic_messages_request`，在发请求前把 `type: image, source: { type: url }` 转为 base64；参考 funcloud_claude 的实现。
+- 若转换失败（如图片 URL 不可达），会抛错或打 error 日志，可根据日志排查网络或 URL 是否可被 LiteLLM 所在环境访问。
+
 ## 参考实现
 
 - [AnthropicMessagesConfig](litellm/llms/anthropic/experimental_pass_through/messages/transformation.py) - **推荐继承此类**
 - [AmazonAnthropicClaudeMessagesConfig](litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py) - Bedrock 实现参考
+- [FuncloudClaudeMessagesConfig](litellm/llms/funcloud_claude/messages/transformation.py) - 含图片 URL 转 base64 的 MessagesConfig 示例（后端为 Bedrock）
 - [BaseAnthropicMessagesConfig](litellm/llms/base_llm/anthropic_messages/transformation.py) - 抽象基类
 
 ## 文件变更汇总
@@ -525,3 +573,11 @@ response = litellm.completion(
 | `litellm/constants.py` | 添加到 `LITELLM_CHAT_PROVIDERS` | 可选 |
 | `litellm/proxy/public_endpoints/provider_create_fields.json` | UI 供应商配置 | ✅ |
 | `ui/litellm-dashboard/src/components/provider_info_helpers.tsx` | UI 枚举和映射 | ✅ |
+
+**后端为 Bedrock 或仅支持 base64 图片时，还需：**
+
+| 文件路径 | 修改内容 | 说明 |
+|---------|---------|------|
+| `litellm/llms/anthropic/chat/transformation.py` | 调用 `anthropic_messages_pt()` 时使用 `litellm_params.get("custom_llm_provider") or "anthropic"`，不要写死 `"anthropic"` | 保证 completion 路径下图片 URL 能按供应商正确转 base64（若该文件尚未按此实现则需改） |
+| `litellm/litellm_core_utils/prompt_templates/factory.py` | 在 `anthropic_messages_pt()` 中把新供应商加入 `is_bedrock_invoke` 判断（如 `llm_provider in (..., "{provider_name}")`） | 使 completion 路径对该公司使用 base64 转换 |
+| `litellm/llms/{provider_name}/messages/transformation.py` | 重写 `transform_anthropic_messages_request`，在发请求前把 `type: image, source: url` 转为 base64 | 使 /v1/messages 直连路径也支持图片 URL→base64 |

@@ -1029,12 +1029,15 @@ class AnthropicConfig(AnthropicModelInfo, BaseConfig):
         # Handling anthropic API Prompt Caching
         if len(anthropic_system_message_list) > 0:
             optional_params["system"] = anthropic_system_message_list
-        # Format rest of message according to anthropic guidelines
+        # Format rest of message according to anthropic guidelines.
+        # Use actual custom_llm_provider (e.g. funcloud_claude, deerapi_claude) so that
+        # anthropic_messages_pt can set is_bedrock_invoke and convert image URL to base64 for Bedrock-backed providers.
+        llm_provider = (litellm_params or {}).get("custom_llm_provider") or "anthropic"
         try:
             anthropic_messages = anthropic_messages_pt(
                 model=model,
                 messages=messages,
-                llm_provider="anthropic",
+                llm_provider=llm_provider,
             )
         except Exception as e:
             raise AnthropicError(

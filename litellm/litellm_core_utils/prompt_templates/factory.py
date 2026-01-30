@@ -2022,7 +2022,12 @@ def anthropic_messages_pt(  # noqa: PLR0915
                                     "format": image_url_value.get("format"),
                                 }
                             # Bedrock invoke models have format: invoke/...
-                            is_bedrock_invoke = model.lower().startswith("invoke/")
+                            # funcloud_claude 后端使用 Bedrock，不支持 image URL，需转为 base64。
+                            # deerapi_claude 支持 image URL，不在此列表中。
+                            is_bedrock_invoke = (
+                                model.lower().startswith("invoke/")
+                                or llm_provider == "funcloud_claude"
+                            )
                             _anthropic_content_element = create_anthropic_image_param(
                                 image_url_input, format=format, is_bedrock_invoke=is_bedrock_invoke
                             ) 
