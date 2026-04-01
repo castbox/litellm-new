@@ -130,6 +130,9 @@ from litellm.litellm_core_utils.llm_response_utils.get_formatted_prompt import (
 from litellm.litellm_core_utils.llm_response_utils.get_headers import (
     get_response_headers,
 )
+from litellm.litellm_core_utils.model_response_utils import (
+    validate_first_chat_completion_response,
+)
 from litellm.litellm_core_utils.llm_response_utils.response_metadata import (
     ResponseMetadata,
 )
@@ -1018,14 +1021,17 @@ def post_call_processing(
                 if is_coroutine is True:
                     pass
                 else:
-                    if (
-                        isinstance(original_response, ModelResponse)
-                        and len(original_response.choices) > 0
-                    ):
-                        model_response: Optional[str] = original_response.choices[
-                            0
-                        ].message.content  # type: ignore
-                        if model_response is not None:
+                    if isinstance(original_response, ModelResponse):
+                        validate_first_chat_completion_response(
+                            model_response=original_response,
+                            model=model,
+                            llm_provider=getattr(
+                                original_response, "_hidden_params", {}
+                            ).get("custom_llm_provider", ""),
+                        )
+
+                        model_response = original_response.choices[0].message.content  # type: ignore
+                        if isinstance(model_response, str):
                             ### POST-CALL RULES ###
                             rules_obj.post_call_rules(input=model_response, model=model)
                             ### JSON SCHEMA VALIDATION ###

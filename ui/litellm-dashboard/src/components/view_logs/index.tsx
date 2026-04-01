@@ -27,6 +27,7 @@ import AuditLogs from "./audit_logs";
 import { getTimeRangeDisplay } from "./logs_utils";
 import { formatNumberWithCommas } from "@/utils/dataUtils";
 import { truncateString } from "@/utils/textUtils";
+import { getCacheReadTokens } from "./usage_utils";
 
 interface SpendLogsTableProps {
   accessToken: string | null;
@@ -888,7 +889,7 @@ export function RequestViewer({ row }: { row: Row<LogEntry> }) {
             <div className="flex">
               <span className="font-medium w-1/3">Cache Read Tokens:</span>
               <span>
-                {formatNumberWithCommas(row.original.metadata?.additional_usage_values?.cache_read_input_tokens || 0)}
+                {formatNumberWithCommas(getCacheReadTokens(row.original))}
               </span>
             </div>
             <div className="flex">

@@ -86,4 +86,26 @@ describe("Request Viewer", () => {
 
     expect(screen.queryByText("LiteLLM Overhead:")).not.toBeInTheDocument();
   });
+
+  it("falls back to nested cached_tokens when normalized cache_read_input_tokens is missing", () => {
+    render(
+      <RequestViewer
+        row={createRow({
+          metadata: {
+            status: "success",
+            additional_usage_values: {
+              cache_creation_input_tokens: 0,
+            },
+            usage_object: {
+              prompt_tokens_details: {
+                cached_tokens: 755,
+              },
+            },
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText("755")).toBeInTheDocument();
+  });
 });

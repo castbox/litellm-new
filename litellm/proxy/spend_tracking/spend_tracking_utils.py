@@ -200,6 +200,33 @@ def _extract_usage_for_ocr_call(response_obj: Any, response_obj_dict: dict) -> d
         return {}
 
 
+def _normalize_cache_read_input_tokens_from_prompt_details(usage: dict) -> dict:
+    """
+    Preserve provider-native prompt_tokens_details while normalizing
+    cache_read_input_tokens for log consumers that expect Anthropic-style naming.
+    """
+    if not isinstance(usage, dict):
+        return usage
+
+    prompt_tokens_details = usage.get("prompt_tokens_details")
+    if isinstance(prompt_tokens_details, BaseModel):
+        prompt_tokens_details = prompt_tokens_details.model_dump()
+        usage["prompt_tokens_details"] = prompt_tokens_details
+
+    if not isinstance(prompt_tokens_details, dict):
+        return usage
+
+    if (
+        "cache_read_input_tokens" not in usage
+        or usage.get("cache_read_input_tokens") is None
+    ):
+        cached_tokens = prompt_tokens_details.get("cached_tokens")
+        if cached_tokens is not None:
+            usage["cache_read_input_tokens"] = cached_tokens
+
+    return usage
+
+
 def get_logging_payload(  # noqa: PLR0915
     kwargs, response_obj, start_time, end_time
 ) -> SpendLogsPayload:
@@ -238,6 +265,7 @@ def get_logging_payload(  # noqa: PLR0915
             usage = dict(_usage)
         elif isinstance(_usage, dict):
             usage = _usage
+        usage = _normalize_cache_read_input_tokens_from_prompt_details(usage)
 
     id = get_spend_logs_id(call_type or "acompletion", response_obj_dict, kwargs)
     standard_logging_payload = cast(
@@ -259,6 +287,14 @@ def get_logging_payload(  # noqa: PLR0915
             "completion_tokens", 0
         )
         standard_logging_total_tokens = standard_logging_payload.get("total_tokens", 0)
+        if not usage:
+            standard_logging_usage_object = standard_logging_payload["metadata"].get(
+                "usage_object", {}
+            )
+            if isinstance(standard_logging_usage_object, dict):
+                usage = _normalize_cache_read_input_tokens_from_prompt_details(
+                    standard_logging_usage_object.copy()
+                )
     if api_key is not None and isinstance(api_key, str):
         if api_key.startswith("sk-"):
             # hash the api_key

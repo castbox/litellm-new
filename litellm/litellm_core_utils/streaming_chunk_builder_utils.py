@@ -17,8 +17,8 @@ from litellm.types.utils import (
     ModelResponse,
     ModelResponseStream,
     PromptTokensDetailsWrapper,
+    ServerToolUse,
     Usage,
-    ServerToolUse
 )
 from litellm.utils import print_verbose, token_counter
 
@@ -346,7 +346,9 @@ class ChunkProcessor:
             id=id,
         )
 
-    def _usage_chunk_calculation_helper(self, usage_chunk: Usage) -> dict:
+    def _usage_chunk_calculation_helper(
+        self, usage_chunk: Union[Usage, Dict[str, Any]]
+    ) -> dict:
         prompt_tokens = 0
         completion_tokens = 0
         ## anthropic prompt caching information ##
@@ -354,6 +356,9 @@ class ChunkProcessor:
         cache_read_input_tokens: Optional[int] = None
         completion_tokens_details: Optional[CompletionTokensDetails] = None
         prompt_tokens_details: Optional[PromptTokensDetailsWrapper] = None
+
+        raw_completion_tokens_details: Optional[Any] = None
+        raw_prompt_tokens_details: Optional[Any] = None
 
         if "prompt_tokens" in usage_chunk:
             prompt_tokens = usage_chunk.get("prompt_tokens", 0) or 0
@@ -363,24 +368,48 @@ class ChunkProcessor:
             cache_creation_input_tokens = usage_chunk.get("cache_creation_input_tokens")
         if "cache_read_input_tokens" in usage_chunk:
             cache_read_input_tokens = usage_chunk.get("cache_read_input_tokens")
-        if hasattr(usage_chunk, "completion_tokens_details"):
-            if isinstance(usage_chunk.completion_tokens_details, dict):
+        if isinstance(usage_chunk, dict):
+            raw_completion_tokens_details = usage_chunk.get(
+                "completion_tokens_details"
+            )
+            raw_prompt_tokens_details = usage_chunk.get("prompt_tokens_details")
+        else:
+            raw_completion_tokens_details = getattr(
+                usage_chunk, "completion_tokens_details", None
+            )
+            raw_prompt_tokens_details = getattr(
+                usage_chunk, "prompt_tokens_details", None
+            )
+
+        if raw_completion_tokens_details is not None:
+            if isinstance(raw_completion_tokens_details, dict):
                 completion_tokens_details = CompletionTokensDetails(
-                    **usage_chunk.completion_tokens_details
+                    **raw_completion_tokens_details
                 )
-            elif isinstance(
-                usage_chunk.completion_tokens_details, CompletionTokensDetails
-            ):
-                completion_tokens_details = usage_chunk.completion_tokens_details
-        if hasattr(usage_chunk, "prompt_tokens_details"):
-            if isinstance(usage_chunk.prompt_tokens_details, dict):
+            elif isinstance(raw_completion_tokens_details, CompletionTokensDetails):
+                completion_tokens_details = raw_completion_tokens_details
+            elif hasattr(raw_completion_tokens_details, "model_dump"):
+                completion_tokens_details = CompletionTokensDetails(
+                    **raw_completion_tokens_details.model_dump()
+                )
+        if raw_prompt_tokens_details is not None:
+            if isinstance(raw_prompt_tokens_details, dict):
                 prompt_tokens_details = PromptTokensDetailsWrapper(
-                    **usage_chunk.prompt_tokens_details
+                    **raw_prompt_tokens_details
                 )
-            elif isinstance(
-                usage_chunk.prompt_tokens_details, PromptTokensDetailsWrapper
-            ):
-                prompt_tokens_details = usage_chunk.prompt_tokens_details
+            elif isinstance(raw_prompt_tokens_details, PromptTokensDetailsWrapper):
+                prompt_tokens_details = raw_prompt_tokens_details
+            elif hasattr(raw_prompt_tokens_details, "model_dump"):
+                prompt_tokens_details = PromptTokensDetailsWrapper(
+                    **raw_prompt_tokens_details.model_dump()
+                )
+
+        if (
+            cache_read_input_tokens is None
+            and prompt_tokens_details is not None
+            and getattr(prompt_tokens_details, "cached_tokens", None) is not None
+        ):
+            cache_read_input_tokens = prompt_tokens_details.cached_tokens
 
         return {
             "prompt_tokens": prompt_tokens,

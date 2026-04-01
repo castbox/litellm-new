@@ -246,6 +246,99 @@ def test_cache_read_input_tokens_retained():
     assert usage.prompt_tokens_details.cached_tokens == 11775
 
 
+def test_cache_read_input_tokens_normalized_from_dict_usage():
+    chunk1 = ModelResponseStream(
+        id="gen-1774245886-HVXFT9yYq2iBCcR35Nu7",
+        created=1774245886,
+        model="x-ai/grok-4-fast",
+        object="chat.completion.chunk",
+        system_fingerprint=None,
+        choices=[
+            StreamingChoices(
+                finish_reason=None,
+                index=0,
+                delta=Delta(
+                    provider_specific_fields=None,
+                    content="",
+                    role="assistant",
+                    function_call=None,
+                    tool_calls=None,
+                    audio=None,
+                ),
+                logprobs=None,
+            )
+        ],
+        provider_specific_fields=None,
+        stream_options={"include_usage": True},
+        usage=None,
+    )
+    chunk1.usage = {
+        "prompt_tokens": 756,
+        "completion_tokens": 0,
+        "total_tokens": 756,
+        "prompt_tokens_details": {
+            "cached_tokens": 755,
+            "cache_write_tokens": 0,
+            "audio_tokens": 0,
+            "video_tokens": 0,
+        },
+    }
+
+    chunk2 = ModelResponseStream(
+        id="gen-1774245886-HVXFT9yYq2iBCcR35Nu7",
+        created=1774245887,
+        model="x-ai/grok-4-fast",
+        object="chat.completion.chunk",
+        system_fingerprint=None,
+        choices=[
+            StreamingChoices(
+                finish_reason="stop",
+                index=0,
+                delta=Delta(
+                    provider_specific_fields=None,
+                    content="",
+                    role="assistant",
+                    function_call=None,
+                    tool_calls=None,
+                    audio=None,
+                ),
+                logprobs=None,
+            )
+        ],
+        provider_specific_fields=None,
+        stream_options={"include_usage": True},
+        usage=None,
+    )
+    chunk2.usage = {
+        "prompt_tokens": 0,
+        "completion_tokens": 401,
+        "total_tokens": 401,
+        "completion_tokens_details": {
+            "reasoning_tokens": 343,
+            "image_tokens": 0,
+            "audio_tokens": 0,
+        },
+    }
+
+    chunks = [chunk1, chunk2]
+    processor = ChunkProcessor(chunks=chunks)
+
+    usage = processor.calculate_usage(
+        chunks=chunks,
+        model="x-ai/grok-4-fast",
+        completion_output="",
+    )
+
+    assert usage.prompt_tokens == 756
+    assert usage.completion_tokens == 401
+    assert usage.total_tokens == 1157
+    assert usage.prompt_tokens_details is not None
+    assert usage.prompt_tokens_details.cached_tokens == 755
+    assert usage.cache_read_input_tokens == 755
+    assert usage.completion_tokens_details is not None
+    assert usage.completion_tokens_details.reasoning_tokens == 343
+
+
 def test_stream_chunk_builder_litellm_usage_chunks():
     """
     Validate ChunkProcessor.calculate_usage uses provided usage fields from streaming chunks

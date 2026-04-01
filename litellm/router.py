@@ -654,6 +654,11 @@ class Router:
         Pseudo-destructor to be invoked to clean up global data structures when router is no longer used.
         For now, unhook router's callbacks from all lists
         """
+        custom_routing_strategy = getattr(self, "_custom_routing_strategy", None)
+        if isinstance(custom_routing_strategy, CustomRoutingStrategyBase):
+            custom_routing_strategy.cleanup()
+            self._custom_routing_strategy = None
+
         litellm.logging_callback_manager.remove_callback_from_list_by_object(
             litellm._async_success_callback, self
         )
@@ -8228,6 +8233,17 @@ class Router:
         Args:
             CustomRoutingStrategy: litellm.router.CustomRoutingStrategyBase
         """
+        current_custom_routing_strategy = getattr(
+            self, "_custom_routing_strategy", None
+        )
+        if (
+            isinstance(current_custom_routing_strategy, CustomRoutingStrategyBase)
+            and current_custom_routing_strategy is not CustomRoutingStrategy
+        ):
+            current_custom_routing_strategy.cleanup()
+
+        CustomRoutingStrategy.on_attach(router=self)
+        self._custom_routing_strategy = CustomRoutingStrategy
 
         setattr(
             self,

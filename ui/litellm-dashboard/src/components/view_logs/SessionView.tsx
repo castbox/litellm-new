@@ -10,6 +10,7 @@ import { Button } from "antd";
 import { copyToClipboard as utilCopyToClipboard } from "../../utils/dataUtils";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import { Tooltip } from "antd";
+import { getCacheReadTokens } from "./usage_utils";
 
 interface SessionViewProps {
   sessionId: string;
@@ -28,7 +29,7 @@ export const SessionView: React.FC<SessionViewProps> = ({ sessionId, logs, onBac
 
   // Calculate cache token totals from metadata
   const totalCacheReadTokens = logs.reduce((sum, log) => {
-    const cacheReadTokens = log.metadata?.additional_usage_values?.cache_read_input_tokens || 0;
+    const cacheReadTokens = getCacheReadTokens(log);
     return sum + cacheReadTokens;
   }, 0);
 

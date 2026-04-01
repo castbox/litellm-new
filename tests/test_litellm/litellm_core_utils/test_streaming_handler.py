@@ -2,7 +2,7 @@ import json
 import os
 import sys
 import time
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
@@ -56,6 +56,43 @@ def logging_obj() -> Logging:
         function_id="1245",
     )
     return logging_obj
+
+
+def _build_stream_logging_obj(call_type: str = "completion") -> Logging:
+    logging = Logging(
+        model="my-random-model",
+        messages=[{"role": "user", "content": "Hey"}],
+        stream=True,
+        call_type=call_type,
+        start_time=time.time(),
+        litellm_call_id="12345",
+        function_id="1245",
+    )
+    logging.call_type = call_type
+    logging.model_call_details["call_type"] = call_type
+    logging.model_call_details["litellm_params"] = {}
+    logging.model_call_details["custom_llm_provider"] = "openai"
+    logging.success_handler = MagicMock()
+    logging.async_success_handler = AsyncMock()
+    logging.failure_handler = MagicMock()
+    logging.async_failure_handler = AsyncMock()
+    return logging
+
+
+class AsyncModelResponseIterator:
+    def __init__(self, chunks):
+        self.chunks = chunks
+        self.index = 0
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if self.index >= len(self.chunks):
+            raise StopAsyncIteration
+        chunk = self.chunks[self.index]
+        self.index += 1
+        return chunk
 
 
 bedrock_chunks = [
@@ -501,6 +538,72 @@ async def test_streaming_handler_with_usage(
                 assert chunk.usage == final_usage_block
             chunk_has_usage = True
     assert chunk_has_usage
+
+
+def test_streaming_handler_preserves_dict_usage_details(logging_obj: Logging):
+    logging_obj.model_call_details["custom_llm_provider"] = "openrouter"
+
+    final_chunk = ModelResponseStream(
+        id="gen-1774245886-HVXFT9yYq2iBCcR35Nu7",
+        created=1774245886,
+        model="x-ai/grok-4-fast",
+        object="chat.completion.chunk",
+        system_fingerprint=None,
+        choices=[
+            StreamingChoices(
+                finish_reason="stop",
+                index=0,
+                delta=Delta(
+                    provider_specific_fields=None,
+                    content="",
+                    role="assistant",
+                    function_call=None,
+                    tool_calls=None,
+                    audio=None,
+                ),
+                logprobs=None,
+            )
+        ],
+        provider_specific_fields={},
+        usage=None,
+    )
+    final_chunk.usage = {
+        "prompt_tokens": 756,
+        "completion_tokens": 401,
+        "total_tokens": 1157,
+        "cost": 0.00023845,
+        "prompt_tokens_details": {
+            "cached_tokens": 755,
+            "cache_write_tokens": 0,
+            "audio_tokens": 0,
+            "video_tokens": 0,
+        },
+        "completion_tokens_details": {
+            "reasoning_tokens": 343,
+            "image_tokens": 0,
+            "audio_tokens": 0,
+        },
+    }
+
+    response = CustomStreamWrapper(
+        completion_stream=None,
+        model="x-ai/grok-4-fast",
+        custom_llm_provider="openai",
+        logging_obj=logging_obj,
+        stream_options={"include_usage": True},
+    )
+
+    processed_chunk = response.chunk_creator(final_chunk)
+
+    assert processed_chunk is not None
+    assert processed_chunk.usage is not None
+    assert processed_chunk.usage.prompt_tokens == 756
+    assert processed_chunk.usage.completion_tokens == 401
+    assert processed_chunk.usage.cost == 0.00023845
+    assert processed_chunk.usage.prompt_tokens_details is not None
+    assert processed_chunk.usage.prompt_tokens_details.cached_tokens == 755
+    assert processed_chunk.usage.completion_tokens_details is not None
+    assert processed_chunk.usage.completion_tokens_details.reasoning_tokens == 343
 
 
 @pytest.mark.parametrize("sync_mode", [False])
@@ -1162,3 +1265,129 @@ def test_is_chunk_non_empty_with_valid_tool_calls(
         )
         is True
     )
+
+
+def test_sync_streaming_empty_final_response_raises_mid_stream_fallback_error():
+    from litellm.exceptions import MidStreamFallbackError
+
+    finish_chunk = ModelResponseStream(
+        choices=[
+            StreamingChoices(
+                finish_reason="stop",
+                index=0,
+                delta=Delta(content=None, role="assistant"),
+            )
+        ]
+    )
+    wrapper = CustomStreamWrapper(
+        completion_stream=iter([finish_chunk]),
+        model="gpt-4o-mini",
+        custom_llm_provider="openai",
+        logging_obj=_build_stream_logging_obj(),
+    )
+
+    first_chunk = next(wrapper)
+
+    assert first_chunk.choices[0].finish_reason == "stop"
+    with pytest.raises(MidStreamFallbackError, match="empty completion response"):
+        next(wrapper)
+
+
+def test_async_streaming_empty_final_response_raises_mid_stream_fallback_error():
+    from litellm.exceptions import MidStreamFallbackError
+
+    async def _run_test():
+        finish_chunk = ModelResponseStream(
+            choices=[
+                StreamingChoices(
+                    finish_reason="stop",
+                    index=0,
+                    delta=Delta(content=None, role="assistant"),
+                )
+            ]
+        )
+        wrapper = CustomStreamWrapper(
+            completion_stream=AsyncModelResponseIterator([finish_chunk]),
+            model="gpt-4o-mini",
+            custom_llm_provider="openai",
+            logging_obj=_build_stream_logging_obj(),
+        )
+
+        first_chunk = await wrapper.__anext__()
+
+        assert first_chunk.choices[0].finish_reason == "stop"
+        with pytest.raises(MidStreamFallbackError, match="empty completion response"):
+            await wrapper.__anext__()
+
+    asyncio.run(_run_test())
+
+
+def test_async_streaming_final_response_allows_late_text():
+    async def _run_test():
+        chunks = [
+            ModelResponseStream(
+                choices=[
+                    StreamingChoices(
+                        index=0, delta=Delta(content=None, role="assistant")
+                    )
+                ]
+            ),
+            ModelResponseStream(
+                choices=[
+                    StreamingChoices(index=0, delta=Delta(content="hello", role=None))
+                ]
+            ),
+            ModelResponseStream(
+                choices=[
+                    StreamingChoices(
+                        finish_reason="stop",
+                        index=0,
+                        delta=Delta(content=None, role=None),
+                    )
+                ]
+            ),
+        ]
+        wrapper = CustomStreamWrapper(
+            completion_stream=AsyncModelResponseIterator(chunks),
+            model="gpt-4o-mini",
+            custom_llm_provider="openai",
+            logging_obj=_build_stream_logging_obj(),
+        )
+
+        collected_chunks = []
+        async for chunk in wrapper:
+            collected_chunks.append(chunk)
+
+        assert any(
+            getattr(chunk.choices[0].delta, "content", None) == "hello"
+            for chunk in collected_chunks
+        )
+
+    asyncio.run(_run_test())
+
+
+def test_async_streaming_empty_final_response_skips_validation_for_responses():
+    async def _run_test():
+        finish_chunk = ModelResponseStream(
+            choices=[
+                StreamingChoices(
+                    finish_reason="stop",
+                    index=0,
+                    delta=Delta(content=None, role="assistant"),
+                )
+            ]
+        )
+        wrapper = CustomStreamWrapper(
+            completion_stream=AsyncModelResponseIterator([finish_chunk]),
+            model="gpt-4o-mini",
+            custom_llm_provider="openai",
+            logging_obj=_build_stream_logging_obj(call_type="responses"),
+        )
+
+        first_chunk = await wrapper.__anext__()
+
+        assert first_chunk.choices[0].finish_reason == "stop"
+        with pytest.raises(StopAsyncIteration):
+            await wrapper.__anext__()
+
+    asyncio.run(_run_test())

@@ -830,6 +830,34 @@ asyncio.run(router_acompletion())
 </TabItem>
 </Tabs>
 
+### SLO-First Cost/Latency Balanced Custom Strategy
+
+If you want to keep P95 TTFT within an SLO and optimize cost within that boundary,
+you can use the built-in custom strategy helper:
+
+```python
+from litellm import Router
+from litellm.router_strategy.cost_latency_balanced import (
+    CostLatencyBalancedRouting,
+    CostLatencyBalancedRoutingConfig,
+)
+
+router = Router(model_list=model_list)
+
+strategy = CostLatencyBalancedRouting(
+    router=router,
+    routing_config=CostLatencyBalancedRoutingConfig(
+        target_p95_ttft_seconds=3.0,
+        slo_margin=0.05,
+        window_seconds=600,
+        min_samples_for_strict_slo=30,
+        epsilon_explore=0.05,
+    ),
+)
+
+router.set_custom_routing_strategy(strategy)
+```
+
 ## Basic Reliability
 
 ### Deployment Ordering (Priority)
