@@ -2039,7 +2039,14 @@ class CustomStreamWrapper:
                 asyncio.create_task(
                     self.logging_obj.async_failure_handler(e, traceback_exception)
                 )
-            raise e
+            raise MidStreamFallbackError(
+                message=str(e),
+                model=self.model,
+                llm_provider=self.custom_llm_provider or "anthropic",
+                original_exception=e,
+                generated_content=self.response_uptil_now,
+                is_pre_first_chunk=not self.sent_first_chunk,
+            )
         except Exception as e:
             traceback_exception = traceback.format_exc()
             if self.logging_obj is not None:

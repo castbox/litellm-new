@@ -1,3 +1,4 @@
+import asyncio
 import copy
 import json
 import os
@@ -1169,6 +1170,117 @@ async def test_acompletion_streaming_iterator_edge_cases():
         print("✓ Handles empty generated content correctly")
 
     print("✓ Edge case tests passed!")
+
+
+def test_acompletion_streaming_iterator_falls_back_on_read_timeout():
+    import httpx
+
+    from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
+    from litellm.types.utils import ModelResponseStream
+
+    async def _run_test():
+        router = litellm.Router(
+            model_list=[
+                {
+                    "model_name": "gpt-4",
+                    "litellm_params": {"model": "gpt-4", "api_key": "fake-key-1"},
+                },
+                {
+                    "model_name": "gpt-3.5-turbo",
+                    "litellm_params": {
+                        "model": "gpt-3.5-turbo",
+                        "api_key": "fake-key-2",
+                    },
+                },
+            ],
+            fallbacks=[{"gpt-4": ["gpt-3.5-turbo"]}],
+            set_verbose=True,
+        )
+
+        messages = [{"role": "user", "content": "Hello"}]
+        initial_kwargs = {"model": "gpt-4", "stream": True, "temperature": 0.7}
+
+        first_chunk = ModelResponseStream(
+            model="gpt-4",
+            choices=[
+                {
+                    "index": 0,
+                    "delta": {"role": "assistant", "content": "Hello"},
+                    "finish_reason": None,
+                }
+            ],
+        )
+        fallback_chunk = ModelResponseStream(
+            model="gpt-3.5-turbo",
+            choices=[
+                {
+                    "index": 0,
+                    "delta": {"role": "assistant", "content": " world"},
+                    "finish_reason": None,
+                }
+            ],
+        )
+
+        class AsyncIteratorWithReadTimeout:
+            def __init__(self):
+                self.index = 0
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                if self.index == 0:
+                    self.index += 1
+                    return first_chunk
+                raise httpx.ReadTimeout("Timeout on reading data from socket")
+
+        class FallbackAsyncIterator:
+            def __init__(self, items):
+                self.items = items
+                self.index = 0
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                if self.index >= len(self.items):
+                    raise StopAsyncIteration
+                item = self.items[self.index]
+                self.index += 1
+                return item
+
+        with patch.object(
+            router,
+            "async_function_with_fallbacks_common_utils",
+            return_value=FallbackAsyncIterator([fallback_chunk]),
+        ) as mock_fallback_utils:
+            logging_obj = MagicMock()
+            logging_obj.model_call_details = {"litellm_params": {}}
+            logging_obj.messages = messages
+            logging_obj.async_failure_handler = AsyncMock()
+
+            primary_response = CustomStreamWrapper(
+                completion_stream=AsyncIteratorWithReadTimeout(),
+                model="gpt-4",
+                custom_llm_provider="openai",
+                logging_obj=logging_obj,
+            )
+            primary_response.chunk_creator = MagicMock(side_effect=lambda chunk: chunk)
+
+            iterator = await router._acompletion_streaming_iterator(
+                model_response=primary_response,
+                messages=messages,
+                initial_kwargs=initial_kwargs,
+            )
+
+            collected_chunks = []
+            async for chunk in iterator:
+                collected_chunks.append(chunk)
+
+            assert mock_fallback_utils.called
+            assert collected_chunks == [first_chunk, fallback_chunk]
+
+    asyncio.run(_run_test())
 
 
 @pytest.mark.asyncio
