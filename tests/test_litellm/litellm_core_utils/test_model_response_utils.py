@@ -208,6 +208,63 @@ def test_validate_first_chat_completion_response_accepts_function_call():
     )
 
 
+def test_validate_first_chat_completion_response_accepts_reasoning_content():
+    response = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(
+                    content=None,
+                    reasoning_content="internal reasoning summary",
+                )
+            )
+        ]
+    )
+
+    validate_first_chat_completion_response(
+        model_response=response,
+        model="gpt-4o-mini",
+        llm_provider="openai",
+    )
+
+
+def test_validate_first_chat_completion_response_accepts_audio():
+    response = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(
+                    content=None,
+                    audio={"id": "audio_123"},
+                )
+            )
+        ]
+    )
+
+    validate_first_chat_completion_response(
+        model_response=response,
+        model="gpt-4o-mini",
+        llm_provider="openai",
+    )
+
+
+def test_validate_first_chat_completion_response_accepts_thinking_blocks():
+    response = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(
+                    content=None,
+                    thinking_blocks=[{"type": "thinking", "thinking": "step one"}],
+                )
+            )
+        ]
+    )
+
+    validate_first_chat_completion_response(
+        model_response=response,
+        model="gpt-4o-mini",
+        llm_provider="openai",
+    )
+
+
 def test_validate_first_chat_completion_response_only_checks_first_choice():
     response = ModelResponse(
         model="gpt-4o-mini",

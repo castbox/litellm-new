@@ -1172,7 +1172,7 @@ async def test_acompletion_streaming_iterator_edge_cases():
     print("✓ Edge case tests passed!")
 
 
-def test_acompletion_streaming_iterator_falls_back_on_read_timeout():
+def test_acompletion_streaming_iterator_raises_read_timeout_without_fallback():
     import httpx
 
     from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
@@ -1210,16 +1210,6 @@ def test_acompletion_streaming_iterator_falls_back_on_read_timeout():
                 }
             ],
         )
-        fallback_chunk = ModelResponseStream(
-            model="gpt-3.5-turbo",
-            choices=[
-                {
-                    "index": 0,
-                    "delta": {"role": "assistant", "content": " world"},
-                    "finish_reason": None,
-                }
-            ],
-        )
 
         class AsyncIteratorWithReadTimeout:
             def __init__(self):
@@ -1234,25 +1224,10 @@ def test_acompletion_streaming_iterator_falls_back_on_read_timeout():
                     return first_chunk
                 raise httpx.ReadTimeout("Timeout on reading data from socket")
 
-        class FallbackAsyncIterator:
-            def __init__(self, items):
-                self.items = items
-                self.index = 0
-
-            def __aiter__(self):
-                return self
-
-            async def __anext__(self):
-                if self.index >= len(self.items):
-                    raise StopAsyncIteration
-                item = self.items[self.index]
-                self.index += 1
-                return item
-
         with patch.object(
             router,
             "async_function_with_fallbacks_common_utils",
-            return_value=FallbackAsyncIterator([fallback_chunk]),
+            new_callable=AsyncMock,
         ) as mock_fallback_utils:
             logging_obj = MagicMock()
             logging_obj.model_call_details = {"litellm_params": {}}
@@ -1274,11 +1249,14 @@ def test_acompletion_streaming_iterator_falls_back_on_read_timeout():
             )
 
             collected_chunks = []
-            async for chunk in iterator:
-                collected_chunks.append(chunk)
+            with pytest.raises(
+                httpx.ReadTimeout, match="Timeout on reading data from socket"
+            ):
+                async for chunk in iterator:
+                    collected_chunks.append(chunk)
 
-            assert mock_fallback_utils.called
-            assert collected_chunks == [first_chunk, fallback_chunk]
+            assert collected_chunks == [first_chunk]
+            assert not mock_fallback_utils.called
 
     asyncio.run(_run_test())
 

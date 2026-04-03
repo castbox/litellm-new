@@ -67,6 +67,16 @@ def _chat_completion_message_has_output(message: Any) -> bool:
     if _has_items(images):
         return True
 
+    if getattr(message, "audio", None) is not None:
+        return True
+
+    if _has_non_whitespace_text(getattr(message, "reasoning_content", None)):
+        return True
+
+    thinking_blocks = getattr(message, "thinking_blocks", None)
+    if _has_items(thinking_blocks):
+        return True
+
     tool_calls = getattr(message, "tool_calls", None)
     if _has_items(tool_calls):
         return True
