@@ -25,6 +25,8 @@ const ReliabilityRetriesSection: React.FC<ReliabilityRetriesSectionProps> = ({
               param != "context_window_fallbacks" &&
               param != "routing_strategy_args" &&
               param != "routing_strategy" &&
+              param != "custom_routing_strategy" &&
+              param != "custom_routing_strategy_args" &&
               param != "enable_tag_filtering",
           )
           .map(([param, value]) => (
@@ -53,4 +55,3 @@ const ReliabilityRetriesSection: React.FC<ReliabilityRetriesSectionProps> = ({
 };
 
 export default ReliabilityRetriesSection;
-

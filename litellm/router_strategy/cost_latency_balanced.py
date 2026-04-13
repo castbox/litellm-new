@@ -911,52 +911,68 @@ class CostLatencyBalancedRouting(CustomRoutingStrategyBase):
         selected_reason = "best_score_slo_missed"
         selected_candidate: Optional[Dict[str, Any]] = None
         scored_candidates: List[Dict[str, Any]] = []
+        cold_start_candidates = [
+            c
+            for c in candidates
+            if c["sample_count"] < self.routing_config.min_samples_for_strict_slo
+            and c["is_hard_failed"] is False
+        ]
+        should_force_cold_start_exposure = (
+            len(cold_start_candidates) > 0
+            and int(request_counter)
+            % max(1, self.routing_config.cold_start_exposure_interval)
+            == 0
+        )
 
-        if len(slo_pass_candidates) > 0:
-            # Cold start guardrail: force exposure every N requests if eligible
-            cold_start_candidates = [
-                c
-                for c in candidates
-                if c["sample_count"] < self.routing_config.min_samples_for_strict_slo
-                and c["is_hard_failed"] is False
-            ]
-            if (
-                len(cold_start_candidates) > 0
-                and int(request_counter) % self.routing_config.cold_start_exposure_interval
-                == 0
-            ):
-                selected_candidate = self._random.choice(cold_start_candidates)
-                selected_reason = "cold_start_forced_exposure"
-                scored_candidates = slo_pass_candidates
-            else:
+        if should_force_cold_start_exposure:
+            if len(slo_pass_candidates) > 0:
                 scored_candidates = self._score_candidates(
                     candidates=slo_pass_candidates,
                     weights=self.weights_when_slo_met,
                 )
-                selected_candidate = self._pick_best_candidate(scored_candidates)
-                if len(reliability_slo_pass_candidates) > 0:
-                    selected_reason = "best_score_slo_met_reliability_gate"
-                else:
-                    selected_reason = "best_score_slo_met_latency_only_fallback"
+            else:
+                scored_candidates = self._score_candidates(
+                    candidates=candidates,
+                    weights=self.weights_when_slo_missed,
+                )
+            selected_candidate = self._random.choice(cold_start_candidates)
+            selected_reason = "cold_start_forced_exposure"
+            return (
+                selected_candidate,
+                scored_candidates,
+                selected_reason,
+                slo_pass_candidates,
+            )
 
-                # Bounded epsilon exploration (only inside SLO-pass set)
-                if (
-                    len(scored_candidates) > 1
-                    and self._random.random() < self.routing_config.epsilon_explore
-                ):
-                    best_cost = min(c["cost"] for c in scored_candidates)
-                    explore_pool = [
-                        c
-                        for c in scored_candidates
-                        if c["cost"]
-                        <= best_cost * self.routing_config.max_explore_cost_multiplier
-                    ]
-                    if len(explore_pool) > 1:
-                        selected_candidate = self._random.choice(explore_pool)
-                        if len(reliability_slo_pass_candidates) > 0:
-                            selected_reason = "epsilon_explore_reliability_gate"
-                        else:
-                            selected_reason = "epsilon_explore_latency_only_fallback"
+        if len(slo_pass_candidates) > 0:
+            scored_candidates = self._score_candidates(
+                candidates=slo_pass_candidates,
+                weights=self.weights_when_slo_met,
+            )
+            selected_candidate = self._pick_best_candidate(scored_candidates)
+            if len(reliability_slo_pass_candidates) > 0:
+                selected_reason = "best_score_slo_met_reliability_gate"
+            else:
+                selected_reason = "best_score_slo_met_latency_only_fallback"
+
+            # Bounded epsilon exploration (only inside SLO-pass set)
+            if (
+                len(scored_candidates) > 1
+                and self._random.random() < self.routing_config.epsilon_explore
+            ):
+                best_cost = min(c["cost"] for c in scored_candidates)
+                explore_pool = [
+                    c
+                    for c in scored_candidates
+                    if c["cost"]
+                    <= best_cost * self.routing_config.max_explore_cost_multiplier
+                ]
+                if len(explore_pool) > 1:
+                    selected_candidate = self._random.choice(explore_pool)
+                    if len(reliability_slo_pass_candidates) > 0:
+                        selected_reason = "epsilon_explore_reliability_gate"
+                    else:
+                        selected_reason = "epsilon_explore_latency_only_fallback"
         else:
             scored_candidates = self._score_candidates(
                 candidates=candidates,
@@ -992,20 +1008,26 @@ class CostLatencyBalancedRouting(CustomRoutingStrategyBase):
                 continue
 
             state = deployment_state_map.get(deployment_id, {})
+            if not isinstance(state, dict):
+                state = {}
 
             # If deployment has recovered from cooldown, restart strategy learning
             # with a cold-start state instead of carrying over high failure streaks.
             if self._should_reset_state_after_cooldown(state, deployment_id):
-                state = self._reset_state_for_recovery()
+                state = self._reset_state_for_recovery(now=now)
                 deployment_state_map[deployment_id] = state
-                cache_key = CostLatencyBalancedMetricsLogger.get_deployment_cache_key(
+                self._persist_deployment_state(
                     model_group=model_group,
                     deployment_id=deployment_id,
+                    state=state,
                 )
-                self.router.cache.set_cache(
-                    key=cache_key,
-                    value=state,
-                    ttl=max(3600, int(self.routing_config.window_seconds * 3)),
+            elif self._should_seed_cold_start_state(state):
+                state = self._build_cold_start_state(now=now)
+                deployment_state_map[deployment_id] = state
+                self._persist_deployment_state(
+                    model_group=model_group,
+                    deployment_id=deployment_id,
+                    state=state,
                 )
 
             CostLatencyBalancedMetricsLogger._prune_state_in_place(
@@ -1116,19 +1138,54 @@ class CostLatencyBalancedRouting(CustomRoutingStrategyBase):
             return False
         return True
 
+    def _persist_deployment_state(
+        self,
+        model_group: str,
+        deployment_id: str,
+        state: Dict[str, Any],
+    ) -> None:
+        cache_key = CostLatencyBalancedMetricsLogger.get_deployment_cache_key(
+            model_group=model_group,
+            deployment_id=deployment_id,
+        )
+        self.router.cache.set_cache(
+            key=cache_key,
+            value=state,
+            ttl=max(3600, int(self.routing_config.window_seconds * 3)),
+        )
+
     @staticmethod
-    def _reset_state_for_recovery() -> Dict[str, Any]:
+    def _should_seed_cold_start_state(state: Dict[str, Any]) -> bool:
+        if len(state) == 0:
+            return True
+
+        return (
+            len(cast(List[Any], state.get("ttft_samples", [])) or []) == 0
+            and state.get("ewma_ttft") is None
+            and len(cast(List[Any], state.get("request_events", [])) or []) == 0
+            and len(cast(List[Any], state.get("token_events", [])) or []) == 0
+            and len(cast(List[Any], state.get("timeout_events", [])) or []) == 0
+            and len(cast(List[Any], state.get("http_5xx_events", [])) or []) == 0
+            and len(cast(Dict[str, Any], state.get("window_stats", {})) or {}) == 0
+            and int(state.get("consecutive_abnormal_windows", 0)) == 0
+        )
+
+    @staticmethod
+    def _build_cold_start_state(now: float) -> Dict[str, Any]:
         return {
-            "ttft_samples": [],
+            "ttft_samples": [[float(now), 0.0]],
             "request_events": [],
             "token_events": [],
             "timeout_events": [],
             "http_5xx_events": [],
             "window_stats": {},
-            "ewma_ttft": None,
+            "ewma_ttft": 0.0,
             "consecutive_abnormal_windows": 0,
             "last_cooldown_bucket": None,
         }
+
+    def _reset_state_for_recovery(self, now: float) -> Dict[str, Any]:
+        return self._build_cold_start_state(now=now)
 
     def _score_candidates(
         self, candidates: List[Dict[str, Any]], weights: Tuple[float, float, float]

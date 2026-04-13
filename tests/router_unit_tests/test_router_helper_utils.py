@@ -13,6 +13,7 @@ import pytest
 import litellm
 from unittest.mock import patch, MagicMock, AsyncMock
 from create_mock_standard_logging_payload import create_standard_logging_payload
+from litellm.router_strategy.cost_latency_balanced import CostLatencyBalancedRouting
 from litellm.types.utils import StandardLoggingPayload
 from litellm.types.router import Deployment, LiteLLM_Params
 
@@ -835,6 +836,37 @@ def test_update_settings(model_list):
     router.update_settings(**{"allowed_fails": 20})
     assert router.allowed_fails != pre_update_allowed_fails
     assert router.allowed_fails == 20
+
+
+def test_update_settings_can_toggle_cost_latency_balanced_custom_strategy(model_list):
+    router = Router(model_list=model_list)
+
+    router.update_settings(
+        **{
+            "custom_routing_strategy": "cost-latency-balanced",
+            "custom_routing_strategy_args": {
+                "default_routing_mode": "balanced",
+                "per_model_group_routing": {"gpt-3.5-turbo": "cost-first"},
+            },
+        }
+    )
+
+    assert router.custom_routing_strategy == "cost-latency-balanced"
+    assert router.custom_routing_strategy_args == {
+        "default_routing_mode": "balanced",
+        "per_model_group_routing": {"gpt-3.5-turbo": "cost-first"},
+    }
+    assert isinstance(router._custom_routing_strategy, CostLatencyBalancedRouting)
+    assert (
+        router._custom_routing_strategy.routing_config.per_model_group_routing
+        == {"gpt-3.5-turbo": "cost-first"}
+    )
+
+    router.update_settings(**{"custom_routing_strategy": None})
+
+    assert router.custom_routing_strategy is None
+    assert router.custom_routing_strategy_args is None
+    assert getattr(router, "_custom_routing_strategy", None) is None
 
 
 def test_common_checks_available_deployment(model_list):

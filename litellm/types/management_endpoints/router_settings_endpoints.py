@@ -26,6 +26,7 @@ ROUTING_STRATEGY_DESCRIPTIONS: Dict[str, str] = {
     "cost-based-routing": "Routes to the deployment with the lowest cost per token.",
     "usage-based-routing": "Routes to the deployment with the lowest TPM (Tokens Per Minute) usage. (deprecated)",
     "usage-based-routing-v2": "Improved version of usage-based routing with better tracking.",
+    "cost-latency-balanced": "Balances cost, latency, and load while honoring SLO and reliability signals.",
 }
 
 
@@ -47,6 +48,23 @@ ROUTER_SETTINGS_FIELDS: List[RouterSettingsField] = [
         field_description="Arguments to pass to the routing strategy (e.g., ttl, lowest_latency_buffer for latency-based-routing)",
         field_default={},
         ui_field_name="Routing Strategy Args",
+    ),
+    RouterSettingsField(
+        field_name="custom_routing_strategy",
+        field_type="String",
+        field_value=None,
+        field_description="Optional custom routing strategy layered on top of the built-in router strategy.",
+        field_default=None,
+        options=[],
+        ui_field_name="Custom Routing Strategy",
+    ),
+    RouterSettingsField(
+        field_name="custom_routing_strategy_args",
+        field_type="Dictionary",
+        field_value=None,
+        field_description="Arguments for the selected custom routing strategy, such as cost-latency-balanced config.",
+        field_default={},
+        ui_field_name="Custom Routing Strategy Args",
     ),
     RouterSettingsField(
         field_name="num_retries",
@@ -194,4 +212,3 @@ ROUTER_SETTINGS_FIELDS: List[RouterSettingsField] = [
         ui_field_name="Disable Cooldowns",
     ),
 ]
-

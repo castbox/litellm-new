@@ -499,8 +499,6 @@ def test_get_config_custom_callback_api_env_vars(monkeypatch):
         "GENERIC_LOGGER_ENDPOINT": "https://callback.example.com",
         "GENERIC_LOGGER_HEADERS": "Auth: token",
     }
-
-
 # Mock Prisma
 class MockPrisma:
     def __init__(self, database_url=None, proxy_logging_obj=None, http_client=None):
@@ -2096,8 +2094,6 @@ async def test_add_router_settings_from_db_config_merge_logic():
         "setting3": "db_value3",
     }
     assert combined_settings["nested_config"] == expected_nested
-
-
 @pytest.mark.asyncio
 async def test_add_router_settings_from_db_config_edge_cases():
     """

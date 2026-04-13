@@ -11,8 +11,11 @@ WORKDIR /app
 
 USER root
 
+COPY docker/apk_add_with_retry.sh /usr/local/bin/apk_add_with_retry
+RUN chmod +x /usr/local/bin/apk_add_with_retry
+
 # Install build dependencies
-RUN apk add --no-cache bash gcc py3-pip python3 python3-dev openssl openssl-dev
+RUN apk_add_with_retry bash gcc py3-pip python3 python3-dev openssl openssl-dev
 
 RUN python -m pip install build
 
@@ -45,8 +48,11 @@ FROM $LITELLM_RUNTIME_IMAGE AS runtime
 # Ensure runtime stage runs as root
 USER root
 
+COPY docker/apk_add_with_retry.sh /usr/local/bin/apk_add_with_retry
+RUN chmod +x /usr/local/bin/apk_add_with_retry
+
 # Install runtime dependencies
-RUN apk add --no-cache bash openssl tzdata nodejs npm python3 py3-pip
+RUN apk_add_with_retry bash openssl tzdata nodejs npm python3 py3-pip
 
 WORKDIR /app
 # Copy the current directory contents into the container at /app

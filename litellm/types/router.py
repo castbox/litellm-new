@@ -77,6 +77,8 @@ class UpdateRouterConfig(BaseModel):
 
     routing_strategy_args: Optional[dict] = None
     routing_strategy: Optional[str] = None
+    custom_routing_strategy: Optional[str] = None
+    custom_routing_strategy_args: Optional[dict] = None
     model_group_retry_policy: Optional[dict] = None
     allowed_fails: Optional[int] = None
     cooldown_time: Optional[float] = None

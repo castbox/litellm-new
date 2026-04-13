@@ -9,4 +9,10 @@ litellm_settings:
   cache: True
   cache_params:
     type: redis
-
+    redis_startup_nodes:
+      - host: redis0.cl
+        port: 10001
+      - host: redis1.cl
+        port: 10001
+      - host: redis2.cl
+        port: 10001

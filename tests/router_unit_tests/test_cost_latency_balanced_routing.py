@@ -468,6 +468,71 @@ def test_cost_latency_balanced_cold_start_forced_exposure_every_20_requests():
     assert selected["model_info"]["id"] == "d2"
 
 
+def test_cost_latency_balanced_initializes_unseen_deployments_with_zero_ttft():
+    router, _, model_group = _build_router_and_strategy()
+
+    request_kwargs = {"metadata": {}}
+    selected = router.get_available_deployment(
+        model=model_group,
+        request_kwargs=request_kwargs,
+        messages=[{"role": "user", "content": "hello"}],
+    )
+
+    assert selected["model_info"]["id"] == "d2"
+    assert request_kwargs["metadata"]["_selected_reason"] == "best_score_slo_missed"
+
+    for deployment_id in ("d1", "d2"):
+        cache_key = CostLatencyBalancedMetricsLogger.get_deployment_cache_key(
+            model_group=model_group,
+            deployment_id=deployment_id,
+        )
+        state = router.cache.get_cache(key=cache_key) or {}
+        ttft_samples = state.get("ttft_samples", [])
+
+        assert len(ttft_samples) == 1
+        assert ttft_samples[0][1] == pytest.approx(0.0)
+        assert state.get("ewma_ttft") == pytest.approx(0.0)
+        assert state.get("request_events", []) == []
+        assert state.get("token_events", []) == []
+
+
+def test_cost_latency_balanced_cold_start_forced_exposure_when_slo_is_missed():
+    router, strategy, model_group = _build_router_and_strategy()
+
+    _set_strategy_state(
+        router=router,
+        model_group=model_group,
+        deployment_id="d1",
+        ttft_values=[6.0] * 40,
+        request_count_window=10,
+        token_count_window=1000,
+        window_seconds=strategy.routing_config.window_seconds,
+    )
+    _set_strategy_state(
+        router=router,
+        model_group=model_group,
+        deployment_id="d2",
+        ttft_values=[12.0] * 5,
+        request_count_window=5,
+        token_count_window=200,
+        window_seconds=strategy.routing_config.window_seconds,
+    )
+
+    request_counter_key = CostLatencyBalancedRouting.get_request_counter_key(model_group)
+    router.cache.set_cache(key=request_counter_key, value=19, ttl=3600)
+
+    request_kwargs = {"metadata": {}}
+    selected = router.get_available_deployment(
+        model=model_group,
+        request_kwargs=request_kwargs,
+        messages=[{"role": "user", "content": "hello"}],
+    )
+
+    assert selected["model_info"]["id"] == "d2"
+    assert request_kwargs["metadata"]["_selected_reason"] == "cold_start_forced_exposure"
+    assert request_kwargs["metadata"]["_slo_pass_set"] == []
+
+
 def test_cost_latency_balanced_tie_break_uses_random_choice():
     router, strategy, model_group = _build_router_and_strategy()
 
@@ -586,4 +651,7 @@ def test_cost_latency_balanced_resets_state_after_cooldown_recovery():
     )
     d1_state = router.cache.get_cache(key=d1_key) or {}
     assert d1_state.get("consecutive_abnormal_windows", 0) == 0
-    assert d1_state.get("ttft_samples", []) == []
+    ttft_samples = d1_state.get("ttft_samples", [])
+    assert len(ttft_samples) == 1
+    assert ttft_samples[0][1] == pytest.approx(0.0)
+    assert d1_state.get("ewma_ttft") == pytest.approx(0.0)

@@ -2,6 +2,7 @@ import { Button } from "@tremor/react";
 import React, { useEffect, useState } from "react";
 import NotificationsManager from "../molecules/notifications_manager";
 import { getCallbacksCall, getRouterSettingsCall, setCallbacksCall } from "../networking";
+import CostLatencyBalancedConfiguration from "./CostLatencyBalancedConfiguration";
 import LatencyBasedConfiguration from "./LatencyBasedConfiguration";
 import ReliabilityRetriesSection from "./ReliabilityRetriesSection";
 import RoutingStrategySelector from "./RoutingStrategySelector";
@@ -18,6 +19,8 @@ interface routingStrategyArgs {
   ttl?: number;
   lowest_latency_buffer?: number;
 }
+
+const CUSTOM_ROUTING_STRATEGIES = new Set(["cost-latency-balanced"]);
 
 const RouterSettings: React.FC<RouterSettingsProps> = ({ accessToken, userRole, userID, modelData }) => {
   const [routerSettings, setRouterSettings] = useState<{ [key: string]: any }>({});
@@ -39,7 +42,9 @@ const RouterSettings: React.FC<RouterSettingsProps> = ({ accessToken, userRole, 
       }
       setRouterSettings(router_settings);
       // Set initial selected strategy
-      if (router_settings.routing_strategy) {
+      if (router_settings.custom_routing_strategy) {
+        setSelectedStrategy(router_settings.custom_routing_strategy);
+      } else if (router_settings.routing_strategy) {
         setSelectedStrategy(router_settings.routing_strategy);
       }
     });
@@ -87,6 +92,7 @@ const RouterSettings: React.FC<RouterSettingsProps> = ({ accessToken, userRole, 
 
     const numberKeys = new Set(["allowed_fails", "cooldown_time", "num_retries", "timeout", "retry_after"]);
     const jsonKeys = new Set(["model_group_alias", "retry_policy"]);
+    const isCustomRoutingStrategy = selectedStrategy ? CUSTOM_ROUTING_STRATEGIES.has(selectedStrategy) : false;
 
     const parseInputValue = (key: string, raw: string | undefined, fallback: unknown) => {
       if (raw === undefined) return fallback;
@@ -124,11 +130,20 @@ const RouterSettings: React.FC<RouterSettingsProps> = ({ accessToken, userRole, 
     const updatedVariables = Object.fromEntries(
       Object.entries(settingsToUpdate)
         .map(([key, value]) => {
-          if (key !== "routing_strategy_args" && key !== "routing_strategy" && key !== "enable_tag_filtering") {
+          if (
+            key !== "routing_strategy_args" &&
+            key !== "routing_strategy" &&
+            key !== "enable_tag_filtering" &&
+            key !== "custom_routing_strategy" &&
+            key !== "custom_routing_strategy_args"
+          ) {
             const inputEl = document.querySelector(`input[name="${key}"]`) as HTMLInputElement | null;
             const parsed = parseInputValue(key, inputEl?.value, value);
             return [key, parsed];
           } else if (key === "routing_strategy") {
+            if (isCustomRoutingStrategy) {
+              return [key, router_settings.routing_strategy || "simple-shuffle"];
+            }
             return [key, selectedStrategy];
           } else if (key === "enable_tag_filtering") {
             return [key, enableTagFiltering];
@@ -155,6 +170,32 @@ const RouterSettings: React.FC<RouterSettingsProps> = ({ accessToken, userRole, 
         })
         .filter((entry) => entry !== null && entry !== undefined) as Iterable<[string, unknown]>,
     );
+
+    if (isCustomRoutingStrategy && selectedStrategy === "cost-latency-balanced") {
+      const defaultRoutingModeElement = document.querySelector(
+        `select[name="cost_latency_default_routing_mode"]`,
+      ) as HTMLSelectElement | null;
+      const perModelGroupRoutingElement = document.querySelector(
+        `textarea[name="cost_latency_per_model_group_routing"]`,
+      ) as HTMLTextAreaElement | null;
+
+      let perModelGroupRouting = routerSettings.custom_routing_strategy_args?.per_model_group_routing || {};
+      if (perModelGroupRoutingElement?.value) {
+        try {
+          perModelGroupRouting = JSON.parse(perModelGroupRoutingElement.value);
+        } catch {
+          NotificationsManager.fromBackend("Per-model-group routing must be valid JSON");
+          return;
+        }
+      }
+
+      updatedVariables.custom_routing_strategy = selectedStrategy;
+      updatedVariables.custom_routing_strategy_args = {
+        default_routing_mode: defaultRoutingModeElement?.value || "balanced",
+        per_model_group_routing: perModelGroupRouting,
+      };
+    }
+
     console.log("updatedVariables", updatedVariables);
 
     const payload = {
@@ -208,6 +249,12 @@ const RouterSettings: React.FC<RouterSettingsProps> = ({ accessToken, userRole, 
       {/* Strategy-Specific Args - Show immediately after strategy if latency-based */}
       {selectedStrategy === "latency-based-routing" && (
         <LatencyBasedConfiguration routingStrategyArgs={routerSettings["routing_strategy_args"]} />
+      )}
+
+      {selectedStrategy === "cost-latency-balanced" && (
+        <CostLatencyBalancedConfiguration
+          customRoutingStrategyArgs={routerSettings["custom_routing_strategy_args"]}
+        />
       )}
 
       {/* Other Settings */}
