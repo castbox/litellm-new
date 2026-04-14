@@ -18,7 +18,10 @@ import litellm
 from litellm import token_counter
 from litellm.caching.caching import DualCache
 from litellm.integrations.custom_logger import CustomLogger
-from litellm.litellm_core_utils.core_helpers import _get_parent_otel_span_from_kwargs
+from litellm.litellm_core_utils.core_helpers import (
+    _get_parent_otel_span_from_kwargs,
+    get_litellm_metadata_from_kwargs,
+)
 from litellm.router_utils.cooldown_cache import CooldownCache
 from litellm.router_utils.cooldown_handlers import _get_cooldown_deployments
 from litellm.router_utils.handle_error import async_raise_no_deployment_exception
@@ -333,8 +336,11 @@ class CostLatencyBalancedMetricsLogger(CustomLogger):
         if not isinstance(litellm_params, dict):
             return None, None
 
-        metadata_field = self._select_metadata_field(litellm_params)
-        metadata = litellm_params.get(metadata_field or "metadata", {}) or {}
+        metadata = get_litellm_metadata_from_kwargs(
+            {"litellm_params": litellm_params}
+        )
+        if not isinstance(metadata, dict):
+            metadata = {}
         model_group = metadata.get("model_group")
 
         deployment_id = litellm_params.get("model_info", {}).get("id")

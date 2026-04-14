@@ -172,14 +172,53 @@ const RouterSettings: React.FC<RouterSettingsProps> = ({ accessToken, userRole, 
     );
 
     if (isCustomRoutingStrategy && selectedStrategy === "cost-latency-balanced") {
+      const existingCustomRoutingStrategyArgs = routerSettings.custom_routing_strategy_args || {};
       const defaultRoutingModeElement = document.querySelector(
         `select[name="cost_latency_default_routing_mode"]`,
       ) as HTMLSelectElement | null;
+      const targetP95TtftElement = document.querySelector(
+        `input[name="cost_latency_target_p95_ttft_seconds"]`,
+      ) as HTMLInputElement | null;
+      const sloMarginElement = document.querySelector(
+        `input[name="cost_latency_slo_margin"]`,
+      ) as HTMLInputElement | null;
+      const minSamplesForStrictSloElement = document.querySelector(
+        `input[name="cost_latency_min_samples_for_strict_slo"]`,
+      ) as HTMLInputElement | null;
+      const coldStartExposureIntervalElement = document.querySelector(
+        `input[name="cost_latency_cold_start_exposure_interval"]`,
+      ) as HTMLInputElement | null;
+      const maxTimeoutRateForSloPassElement = document.querySelector(
+        `input[name="cost_latency_max_timeout_rate_for_slo_pass"]`,
+      ) as HTMLInputElement | null;
+      const max5xxRateForSloPassElement = document.querySelector(
+        `input[name="cost_latency_max_5xx_rate_for_slo_pass"]`,
+      ) as HTMLInputElement | null;
       const perModelGroupRoutingElement = document.querySelector(
         `textarea[name="cost_latency_per_model_group_routing"]`,
       ) as HTMLTextAreaElement | null;
 
-      let perModelGroupRouting = routerSettings.custom_routing_strategy_args?.per_model_group_routing || {};
+      const parseFloatInput = (element: HTMLInputElement | null, fallback: number | null | undefined) => {
+        const rawValue = element?.value?.trim();
+        if (!rawValue) {
+          return fallback;
+        }
+
+        const parsedValue = Number.parseFloat(rawValue);
+        return Number.isNaN(parsedValue) ? fallback : parsedValue;
+      };
+
+      const parseIntegerInput = (element: HTMLInputElement | null, fallback: number | undefined) => {
+        const rawValue = element?.value?.trim();
+        if (!rawValue) {
+          return fallback;
+        }
+
+        const parsedValue = Number.parseInt(rawValue, 10);
+        return Number.isNaN(parsedValue) ? fallback : parsedValue;
+      };
+
+      let perModelGroupRouting = existingCustomRoutingStrategyArgs.per_model_group_routing || {};
       if (perModelGroupRoutingElement?.value) {
         try {
           perModelGroupRouting = JSON.parse(perModelGroupRoutingElement.value);
@@ -191,7 +230,29 @@ const RouterSettings: React.FC<RouterSettingsProps> = ({ accessToken, userRole, 
 
       updatedVariables.custom_routing_strategy = selectedStrategy;
       updatedVariables.custom_routing_strategy_args = {
-        default_routing_mode: defaultRoutingModeElement?.value || "balanced",
+        ...existingCustomRoutingStrategyArgs,
+        default_routing_mode: defaultRoutingModeElement?.value || existingCustomRoutingStrategyArgs.default_routing_mode || "balanced",
+        target_p95_ttft_seconds: parseFloatInput(
+          targetP95TtftElement,
+          existingCustomRoutingStrategyArgs.target_p95_ttft_seconds,
+        ),
+        slo_margin: parseFloatInput(sloMarginElement, existingCustomRoutingStrategyArgs.slo_margin),
+        min_samples_for_strict_slo: parseIntegerInput(
+          minSamplesForStrictSloElement,
+          existingCustomRoutingStrategyArgs.min_samples_for_strict_slo,
+        ),
+        cold_start_exposure_interval: parseIntegerInput(
+          coldStartExposureIntervalElement,
+          existingCustomRoutingStrategyArgs.cold_start_exposure_interval,
+        ),
+        max_timeout_rate_for_slo_pass: parseFloatInput(
+          maxTimeoutRateForSloPassElement,
+          existingCustomRoutingStrategyArgs.max_timeout_rate_for_slo_pass,
+        ),
+        max_5xx_rate_for_slo_pass: parseFloatInput(
+          max5xxRateForSloPassElement,
+          existingCustomRoutingStrategyArgs.max_5xx_rate_for_slo_pass,
+        ),
         per_model_group_routing: perModelGroupRouting,
       };
     }

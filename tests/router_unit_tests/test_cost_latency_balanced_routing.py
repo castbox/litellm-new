@@ -655,3 +655,37 @@ def test_cost_latency_balanced_resets_state_after_cooldown_recovery():
     assert len(ttft_samples) == 1
     assert ttft_samples[0][1] == pytest.approx(0.0)
     assert d1_state.get("ewma_ttft") == pytest.approx(0.0)
+
+
+def test_cost_latency_balanced_logger_uses_metadata_when_litellm_metadata_is_none():
+    router, strategy, model_group = _build_router_and_strategy()
+
+    logger = strategy.metrics_logger
+    start_time = datetime.fromtimestamp(1000.0)
+    completion_start_time = datetime.fromtimestamp(1001.5)
+    end_time = datetime.fromtimestamp(1003.0)
+    callback_kwargs = {
+        "litellm_params": {
+            "metadata": {"model_group": model_group},
+            "litellm_metadata": None,
+            "model_info": {"id": "d1"},
+        },
+        "completion_start_time": completion_start_time,
+    }
+
+    logger.log_success_event(
+        kwargs=callback_kwargs,
+        response_obj=None,
+        start_time=start_time,
+        end_time=end_time,
+    )
+
+    cache_key = CostLatencyBalancedMetricsLogger.get_deployment_cache_key(
+        model_group=model_group,
+        deployment_id="d1",
+    )
+    state = router.cache.get_cache(key=cache_key) or {}
+
+    assert state["ewma_ttft"] == pytest.approx(1.5)
+    assert len(state["ttft_samples"]) == 1
+    assert state["ttft_samples"][0][1] == pytest.approx(1.5)
