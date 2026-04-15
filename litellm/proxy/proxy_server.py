@@ -3985,10 +3985,12 @@ class ProxyConfig:
         3. Combine both
         4. Update router settings
         """
-        if llm_router is not None and prisma_client is not None:
-            db_router_settings = await prisma_client.db.litellm_config.find_first(
-                where={"param_name": "router_settings"}
-            )
+        if llm_router is not None:
+            db_router_settings = None
+            if prisma_client is not None:
+                db_router_settings = await prisma_client.db.litellm_config.find_first(
+                    where={"param_name": "router_settings"}
+                )
 
             config_router_settings = config_data.get("router_settings", {})
 
@@ -4014,6 +4016,14 @@ class ProxyConfig:
                 combined_router_settings = db_router_settings.param_value
 
             if combined_router_settings:
+                combined_router_settings = dict(combined_router_settings)
+                if (
+                    "custom_routing_strategy" not in combined_router_settings
+                    and getattr(llm_router, "custom_routing_strategy", None)
+                    is not None
+                ):
+                    combined_router_settings["custom_routing_strategy"] = None
+                    combined_router_settings["custom_routing_strategy_args"] = None
                 llm_router.update_settings(**combined_router_settings)
 
     def _add_general_settings_from_db_config(

@@ -12,8 +12,11 @@ WORKDIR /app
 
 USER root
 
+COPY docker/apk_add_with_retry.sh /usr/local/bin/apk_add_with_retry
+RUN chmod +x /usr/local/bin/apk_add_with_retry
+
 # Install build dependencies
-RUN apk add --no-cache bash gcc py3-pip python3 python3-dev openssl openssl-dev
+RUN apk_add_with_retry bash gcc py3-pip python3 python3-dev openssl openssl-dev
 
 RUN python -m pip install build
 

@@ -1,6 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderWithProviders, screen, waitFor } from "../../../tests/test-utils";
+import { fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { renderWithProviders, screen, waitFor } from "../../../tests/test-utils";
+import NotificationsManager from "../molecules/notifications_manager";
+import { getCallbacksCall, getRouterSettingsCall, setCallbacksCall } from "../networking";
 import RouterSettings from "./index";
 
 vi.mock("antd", () => ({
@@ -22,22 +26,36 @@ vi.mock("antd", () => ({
   ),
 }));
 
-vi.mock("@/components/networking", () => ({
+vi.mock("../networking", () => ({
   getCallbacksCall: vi.fn(),
   getRouterSettingsCall: vi.fn(),
   setCallbacksCall: vi.fn(),
 }));
 
-import {
-  getCallbacksCall,
-  getRouterSettingsCall,
-  setCallbacksCall,
-} from "@/components/networking";
-import NotificationsManager from "@/components/molecules/notifications_manager";
+vi.mock("../molecules/notifications_manager", () => ({
+  __esModule: true,
+  default: {
+    success: vi.fn(),
+    fromBackend: vi.fn(),
+  },
+}));
 
 const mockCallbacksResponse = {
   router_settings: {
     routing_strategy: "simple-shuffle",
+    custom_routing_strategy: "cost-latency-balanced",
+    custom_routing_strategy_args: {
+      default_routing_mode: "balanced",
+      target_p95_ttft_seconds: 5,
+      slo_margin: 0.1,
+      min_samples_for_strict_slo: 30,
+      cold_start_exposure_interval: 20,
+      max_timeout_rate_for_slo_pass: 0.02,
+      max_5xx_rate_for_slo_pass: 0.06,
+      per_model_group_routing: {
+        "ai-seek-fast-small": "cost-first",
+      },
+    },
     num_retries: 3,
     timeout: 30,
   },
@@ -49,7 +67,14 @@ const mockRouterSettingsResponse = {
       field_name: "routing_strategy",
       ui_field_name: "Routing Strategy",
       field_description: "How requests are distributed",
-      options: ["simple-shuffle", "latency-based-routing"],
+      options: ["simple-shuffle", "latency-based-routing", "cost-latency-balanced"],
+      link: null,
+    },
+    {
+      field_name: "custom_routing_strategy",
+      ui_field_name: "Custom Routing Strategy",
+      field_description: "Optional custom routing strategy layered on top of the built-in router strategy.",
+      options: ["cost-latency-balanced"],
       link: null,
     },
     {
@@ -63,6 +88,7 @@ const mockRouterSettingsResponse = {
   routing_strategy_descriptions: {
     "simple-shuffle": "Randomly pick a deployment",
     "latency-based-routing": "Pick the lowest-latency deployment",
+    "cost-latency-balanced": "Balance cost, latency, and load while honoring SLOs.",
   },
 };
 
@@ -104,9 +130,7 @@ describe("RouterSettings", () => {
   });
 
   it("should not fetch data when any required prop is missing", () => {
-    renderWithProviders(
-      <RouterSettings {...defaultProps} userRole={null} />
-    );
+    renderWithProviders(<RouterSettings {...defaultProps} userRole={null} />);
     expect(getCallbacksCall).not.toHaveBeenCalled();
   });
 
@@ -118,16 +142,35 @@ describe("RouterSettings", () => {
     });
 
     const select = screen.getByTestId("strategy-select") as HTMLSelectElement;
-    const optionValues = Array.from(select.options).map((o) => o.value);
+    const optionValues = Array.from(select.options).map((option) => option.value);
     expect(optionValues).toContain("simple-shuffle");
     expect(optionValues).toContain("latency-based-routing");
+    expect(optionValues).toContain("cost-latency-balanced");
   });
 
-  it("should call setCallbacksCall with updated settings on Save Changes", async () => {
+  it("should render cost-latency-balanced configuration when the custom strategy is active", async () => {
+    renderWithProviders(<RouterSettings {...defaultProps} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Cost-Latency Balanced Configuration")).toBeInTheDocument();
+    });
+
+    expect(screen.getByLabelText("Default Routing Mode")).toHaveValue("balanced");
+    expect(screen.getByLabelText("Target P95 TTFT (seconds)")).toHaveValue(5);
+    expect(screen.getByLabelText("SLO Margin")).toHaveValue(0.1);
+    expect(screen.getByLabelText("Min Samples For Strict SLO")).toHaveValue(30);
+    expect(screen.getByLabelText("Cold Start Exposure Interval")).toHaveValue(20);
+    expect(screen.getByLabelText("Max Timeout Rate For SLO Pass")).toHaveValue(0.02);
+    expect(screen.getByLabelText("Max 5xx Rate For SLO Pass")).toHaveValue(0.06);
+    expect(screen.getByLabelText("Per-Model-Group Routing")).toHaveValue(
+      '{\n  "ai-seek-fast-small": "cost-first"\n}'
+    );
+  });
+
+  it("should call setCallbacksCall with custom strategy settings on Save Changes", async () => {
     const user = userEvent.setup();
     renderWithProviders(<RouterSettings {...defaultProps} />);
 
-    // Wait for the strategy select to appear — it only renders after getRouterSettingsCall resolves
     await waitFor(() => {
       expect(screen.getByTestId("strategy-select")).toBeInTheDocument();
     });
@@ -139,6 +182,16 @@ describe("RouterSettings", () => {
       expect.objectContaining({
         router_settings: expect.objectContaining({
           routing_strategy: "simple-shuffle",
+          custom_routing_strategy: "cost-latency-balanced",
+          custom_routing_strategy_args: expect.objectContaining({
+            default_routing_mode: "balanced",
+            target_p95_ttft_seconds: 5,
+            slo_margin: 0.1,
+            min_samples_for_strict_slo: 30,
+            cold_start_exposure_interval: 20,
+            max_timeout_rate_for_slo_pass: 0.02,
+            max_5xx_rate_for_slo_pass: 0.06,
+          }),
         }),
       })
     );
@@ -148,7 +201,6 @@ describe("RouterSettings", () => {
     const user = userEvent.setup();
     renderWithProviders(<RouterSettings {...defaultProps} />);
 
-    // Wait for data to load before interacting
     await waitFor(() => {
       expect(screen.getByTestId("strategy-select")).toBeInTheDocument();
     });
@@ -157,5 +209,63 @@ describe("RouterSettings", () => {
     expect(NotificationsManager.success).toHaveBeenCalledWith(
       "router settings updated successfully"
     );
+  });
+
+  it("should submit cost-latency-balanced SLO settings in custom routing strategy args", async () => {
+    renderWithProviders(<RouterSettings {...defaultProps} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Cost-Latency Balanced Configuration")).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText("Target P95 TTFT (seconds)"), {
+      target: { value: "4.5" },
+    });
+    fireEvent.change(screen.getByLabelText("SLO Margin"), {
+      target: { value: "0.2" },
+    });
+    fireEvent.change(screen.getByLabelText("Min Samples For Strict SLO"), {
+      target: { value: "12" },
+    });
+    fireEvent.change(screen.getByLabelText("Cold Start Exposure Interval"), {
+      target: { value: "7" },
+    });
+    fireEvent.change(screen.getByLabelText("Max Timeout Rate For SLO Pass"), {
+      target: { value: "0.08" },
+    });
+    fireEvent.change(screen.getByLabelText("Max 5xx Rate For SLO Pass"), {
+      target: { value: "0.15" },
+    });
+    fireEvent.change(screen.getByLabelText("Default Routing Mode"), {
+      target: { value: "latency-first" },
+    });
+    fireEvent.change(screen.getByLabelText("Per-Model-Group Routing"), {
+      target: { value: '{\n  "strategy-balanced-test2": "balanced"\n}' },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() => {
+      expect(setCallbacksCall).toHaveBeenCalledWith(
+        "test-token",
+        expect.objectContaining({
+          router_settings: expect.objectContaining({
+            custom_routing_strategy: "cost-latency-balanced",
+            custom_routing_strategy_args: {
+              default_routing_mode: "latency-first",
+              target_p95_ttft_seconds: 4.5,
+              slo_margin: 0.2,
+              min_samples_for_strict_slo: 12,
+              cold_start_exposure_interval: 7,
+              max_timeout_rate_for_slo_pass: 0.08,
+              max_5xx_rate_for_slo_pass: 0.15,
+              per_model_group_routing: {
+                "strategy-balanced-test2": "balanced",
+              },
+            },
+          }),
+        })
+      );
+    });
   });
 });

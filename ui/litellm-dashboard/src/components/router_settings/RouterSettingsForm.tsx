@@ -1,4 +1,5 @@
 import React from "react";
+import CostLatencyBalancedConfiguration from "./CostLatencyBalancedConfiguration";
 import LatencyBasedConfiguration from "./LatencyBasedConfiguration";
 import ReliabilityRetriesSection from "./ReliabilityRetriesSection";
 import RoutingStrategySelector from "./RoutingStrategySelector";
@@ -73,6 +74,12 @@ const RouterSettingsForm: React.FC<RouterSettingsFormProps> = ({
       {/* Strategy-Specific Args - Show immediately after strategy if latency-based */}
       {value.selectedStrategy === "latency-based-routing" && (
         <LatencyBasedConfiguration routingStrategyArgs={value.routerSettings["routing_strategy_args"]} />
+      )}
+
+      {value.selectedStrategy === "cost-latency-balanced" && (
+        <CostLatencyBalancedConfiguration
+          customRoutingStrategyArgs={value.routerSettings["custom_routing_strategy_args"]}
+        />
       )}
 
       {/* Other Settings */}

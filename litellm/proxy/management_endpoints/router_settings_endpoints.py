@@ -66,6 +66,14 @@ def _get_routing_strategies_from_router_class() -> List[str]:
     raise ValueError("Unable to extract routing strategies from Router class")
 
 
+def _get_custom_routing_strategies() -> List[str]:
+    return ["cost-latency-balanced"]
+
+
+def _get_routing_strategy_options() -> List[str]:
+    return _get_routing_strategies_from_router_class() + _get_custom_routing_strategies()
+
+
 @router.get(
     "/router/settings",
     tags=["Router Settings"],
@@ -87,7 +95,8 @@ async def get_router_settings(
 
     try:
         # Get available routing strategies dynamically from Router class
-        available_routing_strategies = _get_routing_strategies_from_router_class()
+        available_routing_strategies = _get_routing_strategy_options()
+        available_custom_routing_strategies = _get_custom_routing_strategies()
 
         # Get router settings fields from types file
         router_fields = [
@@ -98,7 +107,8 @@ async def get_router_settings(
         for field in router_fields:
             if field.field_name == "routing_strategy":
                 field.options = available_routing_strategies
-                break
+            elif field.field_name == "custom_routing_strategy":
+                field.options = available_custom_routing_strategies
 
         # Try to get router settings from config
         config = await proxy_config.get_config()
@@ -155,7 +165,8 @@ async def get_router_fields(
     """
     try:
         # Get available routing strategies dynamically from Router class
-        available_routing_strategies = _get_routing_strategies_from_router_class()
+        available_routing_strategies = _get_routing_strategy_options()
+        available_custom_routing_strategies = _get_custom_routing_strategies()
 
         # Get router settings fields from types file
         router_fields = [
@@ -166,7 +177,8 @@ async def get_router_fields(
         for field in router_fields:
             if field.field_name == "routing_strategy":
                 field.options = available_routing_strategies
-                break
+            elif field.field_name == "custom_routing_strategy":
+                field.options = available_custom_routing_strategies
 
         # Ensure field_value is None for all fields (don't populate values)
         for field in router_fields:

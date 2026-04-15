@@ -16,6 +16,8 @@ interface routingStrategyArgs {
   lowest_latency_buffer?: number;
 }
 
+const CUSTOM_ROUTING_STRATEGIES = new Set(["cost-latency-balanced"]);
+
 const RouterSettings: React.FC<RouterSettingsProps> = ({ accessToken, userRole, userID, modelData }) => {
   const [formValue, setFormValue] = useState<RouterSettingsFormValue>({
     routerSettings: {},
@@ -37,7 +39,10 @@ const RouterSettings: React.FC<RouterSettingsProps> = ({ accessToken, userRole, 
         delete router_settings["model_group_retry_policy"];
       }
       // Set initial selected strategy
-      const initialStrategy = router_settings.routing_strategy || null;
+      const initialStrategy =
+        router_settings.custom_routing_strategy ||
+        router_settings.routing_strategy ||
+        null;
       setFormValue((prev) => ({
         ...prev,
         routerSettings: router_settings,
@@ -87,11 +92,13 @@ const RouterSettings: React.FC<RouterSettingsProps> = ({ accessToken, userRole, 
       return;
     }
 
-    const router_settings = formValue.routerSettings;
-    console.log("router_settings", router_settings);
+    const routerSettings = formValue.routerSettings;
+    const selectedStrategy = formValue.selectedStrategy;
+    console.log("router_settings", routerSettings);
 
     const numberKeys = new Set(["allowed_fails", "cooldown_time", "num_retries", "timeout", "retry_after"]);
     const jsonKeys = new Set(["model_group_alias", "retry_policy"]);
+    const isCustomRoutingStrategy = selectedStrategy ? CUSTOM_ROUTING_STRATEGIES.has(selectedStrategy) : false;
 
     const parseInputValue = (key: string, raw: string | undefined, fallback: unknown) => {
       if (raw === undefined) return fallback;
@@ -122,19 +129,28 @@ const RouterSettings: React.FC<RouterSettingsProps> = ({ accessToken, userRole, 
 
     // Add enable_tag_filtering to router_settings before processing
     const settingsToUpdate = {
-      ...router_settings,
+      ...routerSettings,
       enable_tag_filtering: formValue.enableTagFiltering,
     };
 
-    const updatedVariables = Object.fromEntries(
+    const updatedVariables: Record<string, unknown> = Object.fromEntries(
       Object.entries(settingsToUpdate)
         .map(([key, value]) => {
-          if (key !== "routing_strategy_args" && key !== "routing_strategy" && key !== "enable_tag_filtering") {
+          if (
+            key !== "routing_strategy_args" &&
+            key !== "routing_strategy" &&
+            key !== "enable_tag_filtering" &&
+            key !== "custom_routing_strategy" &&
+            key !== "custom_routing_strategy_args"
+          ) {
             const inputEl = document.querySelector(`input[name="${key}"]`) as HTMLInputElement | null;
             const parsed = parseInputValue(key, inputEl?.value, value);
             return [key, parsed];
           } else if (key === "routing_strategy") {
-            return [key, formValue.selectedStrategy];
+            if (isCustomRoutingStrategy) {
+              return [key, routerSettings.routing_strategy || "simple-shuffle"];
+            }
+            return [key, selectedStrategy];
           } else if (key === "enable_tag_filtering") {
             return [key, formValue.enableTagFiltering];
           } else if (key === "routing_strategy_args" && formValue.selectedStrategy === "latency-based-routing") {
@@ -160,6 +176,96 @@ const RouterSettings: React.FC<RouterSettingsProps> = ({ accessToken, userRole, 
         })
         .filter((entry) => entry !== null && entry !== undefined) as Iterable<[string, unknown]>,
     );
+
+    if (isCustomRoutingStrategy && selectedStrategy === "cost-latency-balanced") {
+      const existingCustomRoutingStrategyArgs = routerSettings.custom_routing_strategy_args || {};
+      const defaultRoutingModeElement = document.querySelector(
+        `select[name="cost_latency_default_routing_mode"]`,
+      ) as HTMLSelectElement | null;
+      const targetP95TtftElement = document.querySelector(
+        `input[name="cost_latency_target_p95_ttft_seconds"]`,
+      ) as HTMLInputElement | null;
+      const sloMarginElement = document.querySelector(
+        `input[name="cost_latency_slo_margin"]`,
+      ) as HTMLInputElement | null;
+      const minSamplesForStrictSloElement = document.querySelector(
+        `input[name="cost_latency_min_samples_for_strict_slo"]`,
+      ) as HTMLInputElement | null;
+      const coldStartExposureIntervalElement = document.querySelector(
+        `input[name="cost_latency_cold_start_exposure_interval"]`,
+      ) as HTMLInputElement | null;
+      const maxTimeoutRateForSloPassElement = document.querySelector(
+        `input[name="cost_latency_max_timeout_rate_for_slo_pass"]`,
+      ) as HTMLInputElement | null;
+      const max5xxRateForSloPassElement = document.querySelector(
+        `input[name="cost_latency_max_5xx_rate_for_slo_pass"]`,
+      ) as HTMLInputElement | null;
+      const perModelGroupRoutingElement = document.querySelector(
+        `textarea[name="cost_latency_per_model_group_routing"]`,
+      ) as HTMLTextAreaElement | null;
+
+      const parseFloatInput = (element: HTMLInputElement | null, fallback: number | null | undefined) => {
+        const rawValue = element?.value?.trim();
+        if (!rawValue) {
+          return fallback;
+        }
+
+        const parsedValue = Number.parseFloat(rawValue);
+        return Number.isNaN(parsedValue) ? fallback : parsedValue;
+      };
+
+      const parseIntegerInput = (element: HTMLInputElement | null, fallback: number | undefined) => {
+        const rawValue = element?.value?.trim();
+        if (!rawValue) {
+          return fallback;
+        }
+
+        const parsedValue = Number.parseInt(rawValue, 10);
+        return Number.isNaN(parsedValue) ? fallback : parsedValue;
+      };
+
+      let perModelGroupRouting = existingCustomRoutingStrategyArgs.per_model_group_routing || {};
+      if (perModelGroupRoutingElement?.value) {
+        try {
+          perModelGroupRouting = JSON.parse(perModelGroupRoutingElement.value);
+        } catch {
+          NotificationsManager.fromBackend("Per-model-group routing must be valid JSON");
+          return;
+        }
+      }
+
+      updatedVariables.custom_routing_strategy = selectedStrategy;
+      updatedVariables.custom_routing_strategy_args = {
+        ...existingCustomRoutingStrategyArgs,
+        default_routing_mode: defaultRoutingModeElement?.value || existingCustomRoutingStrategyArgs.default_routing_mode || "balanced",
+        target_p95_ttft_seconds: parseFloatInput(
+          targetP95TtftElement,
+          existingCustomRoutingStrategyArgs.target_p95_ttft_seconds,
+        ),
+        slo_margin: parseFloatInput(sloMarginElement, existingCustomRoutingStrategyArgs.slo_margin),
+        min_samples_for_strict_slo: parseIntegerInput(
+          minSamplesForStrictSloElement,
+          existingCustomRoutingStrategyArgs.min_samples_for_strict_slo,
+        ),
+        cold_start_exposure_interval: parseIntegerInput(
+          coldStartExposureIntervalElement,
+          existingCustomRoutingStrategyArgs.cold_start_exposure_interval,
+        ),
+        max_timeout_rate_for_slo_pass: parseFloatInput(
+          maxTimeoutRateForSloPassElement,
+          existingCustomRoutingStrategyArgs.max_timeout_rate_for_slo_pass,
+        ),
+        max_5xx_rate_for_slo_pass: parseFloatInput(
+          max5xxRateForSloPassElement,
+          existingCustomRoutingStrategyArgs.max_5xx_rate_for_slo_pass,
+        ),
+        per_model_group_routing: perModelGroupRouting,
+      };
+    } else {
+      updatedVariables.custom_routing_strategy = null;
+      updatedVariables.custom_routing_strategy_args = null;
+    }
+
     console.log("updatedVariables", updatedVariables);
 
     const payload = {

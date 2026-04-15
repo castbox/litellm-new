@@ -1,23 +1,23 @@
 #!/bin/bash
 
-# Check if nvm is not installed
-if ! command -v nvm &> /dev/null; then
-  # Install nvm
+set -euo pipefail
+
+NODE_VERSION="${NODE_VERSION:-v20}"
+export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+
+if [ ! -s "$NVM_DIR/nvm.sh" ]; then
   curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.38.0/install.sh | bash
-
-  # Source nvm script in the current session
-  export NVM_DIR="$HOME/.nvm"
-  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 fi
 
-# Use nvm to set the required Node.js version
-nvm use v20
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 
-# Check if nvm use was successful
-if [ $? -ne 0 ]; then
-  echo "Error: Failed to switch to Node.js v20. Deployment aborted."
-  exit 1
-fi
+nvm install "$NODE_VERSION"
+
+# `nvm install` already activates the resolved version. Avoid a follow-up
+# `nvm use v20` in minimal BusyBox-based images, where nvm's alias lookup can
+# trip over the bundled `ls` implementation.
+node --version
+npm --version
 
 # print contents of ui_colors.json
 echo "Contents of ui_colors.json:"
