@@ -4123,6 +4123,28 @@ def get_optional_params(  # noqa: PLR0915
                 else False
             ),
         )
+    elif custom_llm_provider == "deerapi_gemini":
+        optional_params = litellm.DeerAPIGeminiConfig().map_openai_params(
+            non_default_params=non_default_params,
+            optional_params=optional_params,
+            model=model,
+            drop_params=(
+                drop_params
+                if drop_params is not None and isinstance(drop_params, bool)
+                else False
+            ),
+        )
+    elif custom_llm_provider == "ominilink_gemini":
+        optional_params = litellm.OminiLinkGeminiConfig().map_openai_params(
+            non_default_params=non_default_params,
+            optional_params=optional_params,
+            model=model,
+            drop_params=(
+                drop_params
+                if drop_params is not None and isinstance(drop_params, bool)
+                else False
+            ),
+        )
     elif custom_llm_provider == "vertex_ai_beta" or (
         custom_llm_provider == "vertex_ai" and "gemini" in model
     ):
@@ -7897,6 +7919,8 @@ class ProviderConfigManager:
             # Format: (factory_function, needs_model_parameter: bool)
             LlmProviders.OPENAI: (lambda: litellm.OpenAIGPTConfig(), False),
             LlmProviders.ANTHROPIC: (lambda: litellm.AnthropicConfig(), False),
+            LlmProviders.FUNCLOUD_CLAUDE: (lambda: litellm.AnthropicConfig(), False),
+            LlmProviders.DEERAPI_CLAUDE: (lambda: litellm.AnthropicConfig(), False),
             LlmProviders.AZURE: (
                 lambda model: ProviderConfigManager._get_azure_config(model),
                 True,
@@ -8031,6 +8055,23 @@ class ProviderConfigManager:
             LlmProviders.HEROKU: (lambda: litellm.HerokuChatConfig(), False),
             LlmProviders.OCI: (lambda: litellm.OCIChatConfig(), False),
             LlmProviders.HYPERBOLIC: (lambda: litellm.HyperbolicChatConfig(), False),
+            LlmProviders.DEERAPI: (lambda: litellm.DeerAPIChatConfig(), False),
+            LlmProviders.INFINIAI: (lambda: litellm.InfiniAIChatConfig(), False),
+            LlmProviders.BLTCY: (lambda: litellm.BLTCYChatConfig(), False),
+            LlmProviders.XIAKEXING: (lambda: litellm.XiakeXingChatConfig(), False),
+            LlmProviders.SHUBIAOBIAO: (
+                lambda: litellm.ShuBiaoBiaoChatConfig(),
+                False,
+            ),
+            LlmProviders.OMNILINK: (lambda: litellm.OmniLinkChatConfig(), False),
+            LlmProviders.ONEROUTER: (lambda: litellm.OneRouterChatConfig(), False),
+            LlmProviders.FUNCLOUD: (lambda: litellm.FunCloudChatConfig(), False),
+            LlmProviders.COMFLYCHAT: (
+                lambda: litellm.ComflyChatChatConfig(),
+                False,
+            ),
+            LlmProviders.APIMART: (lambda: litellm.ApiMartChatConfig(), False),
+            LlmProviders.TOAPIS: (lambda: litellm.ToAPIsChatConfig(), False),
             LlmProviders.OVHCLOUD: (lambda: litellm.OVHCloudChatConfig(), False),
             LlmProviders.AMAZON_NOVA: (lambda: litellm.AmazonNovaChatConfig(), False),
             LlmProviders.LANGGRAPH: (
@@ -8141,7 +8182,6 @@ class ProviderConfigManager:
             if provider_config is None:
                 raise ValueError(f"Provider {provider.value} not found")
             return create_config_class(provider_config)()
-
         return None
 
     @staticmethod
@@ -8297,6 +8337,18 @@ class ProviderConfigManager:
             )
 
             return MinimaxMessagesConfig()
+        elif litellm.LlmProviders.FUNCLOUD_CLAUDE == provider:
+            from litellm.llms.funcloud_claude.messages.transformation import (
+                FuncloudClaudeMessagesConfig,
+            )
+
+            return FuncloudClaudeMessagesConfig()
+        elif litellm.LlmProviders.DEERAPI_CLAUDE == provider:
+            from litellm.llms.deerapi_claude.messages.transformation import (
+                DeerapiClaudeMessagesConfig,
+            )
+
+            return DeerapiClaudeMessagesConfig()
         return None
 
     @staticmethod

@@ -518,6 +518,18 @@ def cost_per_token(  # noqa: PLR0915
         return gemini_cost_per_token(
             model=model, usage=usage_block, service_tier=service_tier
         )
+    elif custom_llm_provider == "deerapi_gemini":
+        from litellm.llms.deerapi_gemini.cost_calculator import (
+            cost_per_token as deerapi_gemini_cost_per_token,
+        )
+
+        return deerapi_gemini_cost_per_token(model=model, usage=usage_block)
+    elif custom_llm_provider == "ominilink_gemini":
+        from litellm.llms.ominilink_gemini.cost_calculator import (
+            cost_per_token as ominilink_gemini_cost_per_token,
+        )
+
+        return ominilink_gemini_cost_per_token(model=model, usage=usage_block)
     elif custom_llm_provider == "deepseek":
         return deepseek_cost_per_token(model=model, usage=usage_block)
     elif custom_llm_provider == "perplexity":

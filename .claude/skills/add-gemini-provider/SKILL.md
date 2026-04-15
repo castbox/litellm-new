@@ -70,7 +70,6 @@ timeout=ClientTimeout(
 ```
 
 **为什么**: `stream_timeout` 应该只控制单个 chunk 的超时，而不是整个 stream 的持续时间。设置 `total` 会导致整个流在读取超时后中断，而不是只对单个 chunk 应用超时。
-
 ## 步骤
 
 ### 1. 创建供应商配置类
@@ -373,7 +372,6 @@ docker push 851725654066.dkr.ecr.us-east-1.amazonaws.com/saas-guru/litellm:$TAG
 ```
 
 **为什么**: 将 LiteLLM 项目打包为 linux/arm64 镜像并推送到 AWS ECR，供部署使用。在项目根目录执行 `docker build`。
-
 ## 常见问题
 
 ### 模型从数据库加载后不显示

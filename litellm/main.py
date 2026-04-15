@@ -2890,6 +2890,100 @@ def completion(  # type: ignore # noqa: PLR0915
                     original_response=response,
                 )
             response = response
+        elif custom_llm_provider == "funcloud_claude":
+            api_key = (
+                api_key
+                or litellm.api_key
+                or get_secret("FUNCLOUD_CLAUDE_API_KEY")
+            )
+            api_base = (
+                api_base
+                or litellm.api_base
+                or get_secret("FUNCLOUD_CLAUDE_API_BASE")
+                or "https://funcloud.ai/v1/model/chat/completions"
+            )
+
+            # FunCloud Claude 使用 Bearer Token 认证
+            if headers is None:
+                headers = {}
+            if api_key and "Authorization" not in headers:
+                headers["Authorization"] = f"Bearer {api_key}"
+                api_key = None  # 清空 api_key，避免 anthropic_chat_completions 再设置 x-api-key
+
+            response = anthropic_chat_completions.completion(
+                model=model,
+                messages=messages,
+                api_base=api_base,
+                acompletion=acompletion,
+                custom_prompt_dict=litellm.custom_prompt_dict,
+                model_response=model_response,
+                print_verbose=print_verbose,
+                optional_params=optional_params,
+                litellm_params=litellm_params,
+                logger_fn=logger_fn,
+                encoding=_get_encoding(),
+                api_key=api_key,
+                logging_obj=logging,
+                headers=headers,
+                timeout=timeout,
+                client=client,
+                custom_llm_provider=custom_llm_provider,
+            )
+            if optional_params.get("stream", False) or acompletion is True:
+                ## LOGGING
+                logging.post_call(
+                    input=messages,
+                    api_key=api_key,
+                    original_response=response,
+                )
+            response = response
+        elif custom_llm_provider == "deerapi_claude":
+            api_key = (
+                api_key
+                or litellm.api_key
+                or get_secret("DEERAPI_CLAUDE_API_KEY")
+            )
+            api_base = (
+                api_base
+                or litellm.api_base
+                or get_secret("DEERAPI_CLAUDE_API_BASE")
+                or "https://api.deerapi.com/v1/messages"
+            )
+
+            # DeerAPI Claude 使用 Bearer Token 认证
+            if headers is None:
+                headers = {}
+            if api_key and "Authorization" not in headers:
+                headers["Authorization"] = f"Bearer {api_key}"
+                api_key = None  # 清空 api_key，避免 anthropic_chat_completions 再设置 x-api-key
+
+            response = anthropic_chat_completions.completion(
+                model=model,
+                messages=messages,
+                api_base=api_base,
+                acompletion=acompletion,
+                custom_prompt_dict=litellm.custom_prompt_dict,
+                model_response=model_response,
+                print_verbose=print_verbose,
+                optional_params=optional_params,
+                litellm_params=litellm_params,
+                logger_fn=logger_fn,
+                encoding=_get_encoding(),
+                api_key=api_key,
+                logging_obj=logging,
+                headers=headers,
+                timeout=timeout,
+                client=client,
+                custom_llm_provider=custom_llm_provider,
+            )
+            if optional_params.get("stream", False) or acompletion is True:
+                ## LOGGING
+                logging.post_call(
+                    input=messages,
+                    api_key=api_key,
+                    original_response=response,
+                )
+            response = response
         elif custom_llm_provider == "nlp_cloud":
             nlp_cloud_key = (
                 api_key
@@ -3456,6 +3550,80 @@ def completion(  # type: ignore # noqa: PLR0915
                 client=client,
                 api_base=api_base,
                 extra_headers=headers,
+            )
+
+        elif custom_llm_provider == "deerapi_gemini":
+            from litellm.llms.deerapi_gemini.chat.transformation import (
+                DeerAPIGeminiConfig,
+            )
+
+            # 获取配置
+            api_key = DeerAPIGeminiConfig.get_api_key(api_key) or litellm.api_key
+            api_base = DeerAPIGeminiConfig.get_api_base(api_base)
+
+            # 设置 gemini_api_key
+            gemini_api_key = api_key
+
+            # 这些参数对于 gemini 协议是可选的，但函数签名需要它们
+            vertex_ai_project = None
+            vertex_ai_location = None
+            vertex_credentials = None
+
+            # 调用 Gemini handler，使用 gemini 协议
+            new_params = safe_deep_copy(optional_params or {})
+            response = vertex_chat_completion.completion(  # type: ignore
+                model=model,
+                messages=messages,
+                custom_llm_provider="gemini",  # 使用 gemini 协议
+                model_response=model_response,
+                print_verbose=print_verbose,
+                optional_params=new_params,
+                litellm_params=litellm_params,  # type: ignore
+                timeout=timeout,
+                encoding=_get_encoding(),
+                logging_obj=logging,
+                acompletion=acompletion,
+                api_base=api_base,
+                gemini_api_key=gemini_api_key,
+                vertex_project=vertex_ai_project,
+                vertex_location=vertex_ai_location,
+                vertex_credentials=vertex_credentials,
+                extra_headers=headers,
+                client=client,
+                logger_fn=logger_fn,
+            )
+            # 注意：不需要在这里设置 custom_llm_provider，因为第 1264 行的通用逻辑已经设置了
+
+        elif custom_llm_provider == "ominilink_gemini":
+            from litellm.llms.ominilink_gemini.chat.transformation import (
+                OminiLinkGeminiConfig,
+            )
+
+            api_key = OminiLinkGeminiConfig.get_api_key(api_key) or litellm.api_key
+            api_base = OminiLinkGeminiConfig.get_api_base(api_base)
+            gemini_api_key = api_key
+
+            new_params = safe_deep_copy(optional_params or {})
+            response = vertex_chat_completion.completion(  # type: ignore
+                model=model,
+                messages=messages,
+                custom_llm_provider="gemini",
+                model_response=model_response,
+                print_verbose=print_verbose,
+                optional_params=new_params,
+                litellm_params=litellm_params,  # type: ignore
+                timeout=timeout,
+                encoding=_get_encoding(),
+                logging_obj=logging,
+                acompletion=acompletion,
+                api_base=api_base,
+                gemini_api_key=gemini_api_key,
+                vertex_project=None,
+                vertex_location=None,
+                vertex_credentials=None,
+                extra_headers=headers,
+                client=client,
+                logger_fn=logger_fn,
             )
 
         elif custom_llm_provider == "vertex_ai":
@@ -4219,7 +4387,6 @@ def completion(  # type: ignore # noqa: PLR0915
             )
 
             pass
-
         elif custom_llm_provider == "ovhcloud" or model in litellm.ovhcloud_models:
             api_key = (
                 api_key

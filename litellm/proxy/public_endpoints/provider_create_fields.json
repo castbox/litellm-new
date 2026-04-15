@@ -102,6 +102,62 @@
     "default_model_placeholder": "gpt-3.5-turbo"
   },
   {
+    "provider": "ApiMart",
+    "provider_display_name": "ApiMart",
+    "litellm_provider": "apimart",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://api.apimart.ai/v1",
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://api.apimart.ai/v1"
+      },
+      {
+        "key": "api_key",
+        "label": "ApiMart API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "ToAPIs",
+    "provider_display_name": "ToAPIs",
+    "litellm_provider": "toapis",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://toapis.com/v1",
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://toapis.com/v1"
+      },
+      {
+        "key": "api_key",
+        "label": "ToAPIs API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
     "provider": "Bedrock",
     "provider_display_name": "Amazon Bedrock",
     "litellm_provider": "bedrock",
@@ -307,6 +363,314 @@
         "placeholder": null,
         "tooltip": null,
         "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "BLTCY",
+    "provider_display_name": "BLTCY",
+    "litellm_provider": "bltcy",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://api.bltcy.ai/v1/",
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://api.bltcy.ai/v1/"
+      },
+      {
+        "key": "api_key",
+        "label": "BLTCY API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "ComflyChat",
+    "provider_display_name": "ComflyChat",
+    "litellm_provider": "comflychat",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://ai.comfly.chat/v1",
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://ai.comfly.chat/v1"
+      },
+      {
+        "key": "api_key",
+        "label": "ComflyChat API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "DeerAPI",
+    "provider_display_name": "DeerAPI",
+    "litellm_provider": "deerapi",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://api.deerapi.com/v1",
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://api.deerapi.com/v1"
+      },
+      {
+        "key": "api_key",
+        "label": "DeerAPI API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "deerapi_gemini",
+    "provider_display_name": "DeerAPI Gemini",
+    "litellm_provider": "deerapi_gemini",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://api.deerapi.com/v1beta",
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://api.deerapi.com/v1beta"
+      },
+      {
+        "key": "api_key",
+        "label": "DeerAPI Gemini API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gemini-2.0-flash"
+  },
+  {
+    "provider": "ominilink_gemini",
+    "provider_display_name": "OminiLink Gemini",
+    "litellm_provider": "ominilink_gemini",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://api.ominilink.ai/v1beta",
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://api.ominilink.ai/v1beta"
+      },
+      {
+        "key": "api_key",
+        "label": "OminiLink Gemini API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gemini-2.0-flash"
+  },
+  {
+    "provider": "FunCloud",
+    "provider_display_name": "FunCloud",
+    "litellm_provider": "funcloud",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://funcloud.ai/v1",
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://funcloud.ai/v1"
+      },
+      {
+        "key": "api_key",
+        "label": "FunCloud API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "FunCloudClaude",
+    "provider_display_name": "FunCloud Claude",
+    "litellm_provider": "funcloud_claude",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://funcloud.ai/v1/model/chat/completions",
+        "tooltip": "API 完整地址（包含路径）",
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://funcloud.ai/v1/model/chat/completions"
+      },
+      {
+        "key": "api_key",
+        "label": "FunCloud Claude API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "claude-3-opus"
+  },
+  {
+    "provider": "DeerAPI_Claude",
+    "provider_display_name": "DeerAPI Claude",
+    "litellm_provider": "deerapi_claude",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://api.deerapi.com/v1/messages",
+        "tooltip": "API 完整地址（包含路径）",
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://api.deerapi.com/v1/messages"
+      },
+      {
+        "key": "api_key",
+        "label": "DeerAPI Claude API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "claude-3-opus"
+  },
+  {
+    "provider": "InfiniAI",
+    "provider_display_name": "InfiniAI",
+    "litellm_provider": "infiniai",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://cloud.infini-ai.com/maas/v1",
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://cloud.infini-ai.com/maas/v1"
+      },
+      {
+        "key": "api_key",
+        "label": "InfiniAI API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "OmniLink",
+    "provider_display_name": "OmniLink",
+    "litellm_provider": "omnilink",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://api.ominilink.ai/v1",
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://api.ominilink.ai/v1"
+      },
+      {
+        "key": "api_key",
+        "label": "OmniLink API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "OneRouter",
+    "provider_display_name": "OneRouter",
+    "litellm_provider": "onerouter",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://llm.onerouter.pro/v1",
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://llm.onerouter.pro/v1"
+      },
+      {
+        "key": "api_key",
+        "label": "OneRouter API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
         "field_type": "password",
         "options": null,
         "default_value": null
@@ -2503,6 +2867,34 @@
     "default_model_placeholder": "sap/gpt-4"
   },
   {
+    "provider": "ShuBiaoBiao",
+    "provider_display_name": "ShuBiaoBiao",
+    "litellm_provider": "shubiaobiao",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://api.shubiaobiao.cn/v1",
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://api.shubiaobiao.cn/v1"
+      },
+      {
+        "key": "api_key",
+        "label": "ShuBiaoBiao API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
     "provider": "Snowflake",
     "provider_display_name": "Snowflake",
     "litellm_provider": "snowflake",
@@ -2988,6 +3380,34 @@
       {
         "key": "api_key",
         "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "XiakeXing",
+    "provider_display_name": "XiakeXing",
+    "litellm_provider": "xiakexing",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://apiscn.openroutex.com",
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://apiscn.openroutex.com"
+      },
+      {
+        "key": "api_key",
+        "label": "XiakeXing API Key",
         "placeholder": null,
         "tooltip": null,
         "required": true,

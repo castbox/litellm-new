@@ -1754,6 +1754,34 @@ def test_completion_cost_service_tier_for_bedrock():
     assert priority_cost > default_cost > flex_cost > 0
 
 
+def test_cost_per_token_keeps_service_tier_for_gemini(monkeypatch):
+    captured_args = {}
+
+    def _mock_gemini_cost_per_token(model, usage, service_tier=None):
+        captured_args["model"] = model
+        captured_args["usage"] = usage
+        captured_args["service_tier"] = service_tier
+        return (0.0, 0.0)
+
+    monkeypatch.setattr(
+        "litellm.cost_calculator.gemini_cost_per_token",
+        _mock_gemini_cost_per_token,
+    )
+
+    usage = Usage(prompt_tokens=100, completion_tokens=50, total_tokens=150)
+
+    litellm.cost_calculator.cost_per_token(
+        model="gemini/gemini-2.0-flash",
+        usage_object=usage,
+        custom_llm_provider="gemini",
+        service_tier="flex",
+    )
+
+    assert captured_args["model"] == "gemini/gemini-2.0-flash"
+    assert captured_args["usage"] == usage
+    assert captured_args["service_tier"] == "flex"
+
+
 def test_gemini_cache_tokens_details_no_negative_values():
     """
     Test for Issue #18750: Negative text_tokens with Gemini caching

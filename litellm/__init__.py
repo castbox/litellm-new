@@ -260,6 +260,17 @@ ovhcloud_key: Optional[str] = None
 lemonade_key: Optional[str] = None
 sap_service_key: Optional[str] = None
 amazon_nova_api_key: Optional[str] = None
+deerapi_key: Optional[str] = None
+infiniai_key: Optional[str] = None
+bltcy_key: Optional[str] = None
+xiakexing_key: Optional[str] = None
+shubiaobiao_key: Optional[str] = None
+omnilink_key: Optional[str] = None
+onerouter_key: Optional[str] = None
+funcloud_key: Optional[str] = None
+comflychat_key: Optional[str] = None
+apimart_key: Optional[str] = None
+toapis_key: Optional[str] = None
 common_cloud_provider_auth_params: dict = {
     "params": ["project", "region_name", "token"],
     "providers": ["vertex_ai", "bedrock", "watsonx", "azure", "vertex_ai_beta"],
@@ -598,6 +609,17 @@ aws_polly_models: Set = set()
 gigachat_models: Set = set()
 llamagate_models: Set = set()
 bedrock_mantle_models: Set = set()
+deerapi_models: Set = set()
+infiniai_models: Set = set()
+bltcy_models: Set = set()
+xiakexing_models: Set = set()
+shubiaobiao_models: Set = set()
+omnilink_models: Set = set()
+onerouter_models: Set = set()
+funcloud_models: Set = set()
+comflychat_models: Set = set()
+apimart_models: Set = set()
+toapis_models: Set = set()
 
 
 def is_bedrock_pricing_only_model(key: str) -> bool:
@@ -864,6 +886,28 @@ def add_known_models(model_cost_map: Optional[Dict] = None):
             llamagate_models.add(key)
         elif value.get("litellm_provider") == "bedrock_mantle":
             bedrock_mantle_models.add(key)
+        elif value.get("litellm_provider") == "deerapi":
+            deerapi_models.add(key)
+        elif value.get("litellm_provider") == "infiniai":
+            infiniai_models.add(key)
+        elif value.get("litellm_provider") == "bltcy":
+            bltcy_models.add(key)
+        elif value.get("litellm_provider") == "xiakexing":
+            xiakexing_models.add(key)
+        elif value.get("litellm_provider") == "shubiaobiao":
+            shubiaobiao_models.add(key)
+        elif value.get("litellm_provider") == "omnilink":
+            omnilink_models.add(key)
+        elif value.get("litellm_provider") == "onerouter":
+            onerouter_models.add(key)
+        elif value.get("litellm_provider") == "funcloud":
+            funcloud_models.add(key)
+        elif value.get("litellm_provider") == "comflychat":
+            comflychat_models.add(key)
+        elif value.get("litellm_provider") == "apimart":
+            apimart_models.add(key)
+        elif value.get("litellm_provider") == "toapis":
+            toapis_models.add(key)
 
 
 add_known_models()
@@ -1078,6 +1122,17 @@ models_by_provider: dict = {
     "gigachat": gigachat_models,
     "llamagate": llamagate_models,
     "bedrock_mantle": bedrock_mantle_models,
+    "deerapi": deerapi_models,
+    "infiniai": infiniai_models,
+    "bltcy": bltcy_models,
+    "xiakexing": xiakexing_models,
+    "shubiaobiao": shubiaobiao_models,
+    "omnilink": omnilink_models,
+    "onerouter": onerouter_models,
+    "funcloud": funcloud_models,
+    "comflychat": comflychat_models,
+    "apimart": apimart_models,
+    "toapis": toapis_models,
 }
 
 # mapping for those models which have larger equivalents
@@ -1140,11 +1195,24 @@ from .utils import client
 from .llms.custom_llm import CustomLLM
 from .llms.anthropic.common_utils import AnthropicModelInfo
 from .llms.ai21.chat.transformation import AI21ChatConfig, AI21ChatConfig as AI21Config
+from .llms.apimart.chat.transformation import ApiMartChatConfig
+from .llms.toapis.chat.transformation import ToAPIsChatConfig
+from .llms.bltcy.chat.transformation import BLTCYChatConfig
+from .llms.comflychat.chat.transformation import ComflyChatChatConfig
+from .llms.deerapi.chat.transformation import DeerAPIChatConfig
+from .llms.funcloud.chat.transformation import FunCloudChatConfig
+from .llms.infiniai.chat.transformation import InfiniAIChatConfig
 from .llms.deprecated_providers.palm import (
     PalmConfig,
 )  # here to prevent breaking changes
 from .llms.deprecated_providers.aleph_alpha import AlephAlphaConfig
 from .llms.gemini.common_utils import GeminiModelInfo
+from .llms.gemini.chat.transformation import (
+    GoogleAIStudioGeminiConfig,
+    GoogleAIStudioGeminiConfig as GeminiConfig,  # aliased to maintain backwards compatibility
+)
+from .llms.deerapi_gemini.chat.transformation import DeerAPIGeminiConfig
+from .llms.ominilink_gemini.chat.transformation import OminiLinkGeminiConfig
 
 
 from .llms.vertex_ai.vertex_embeddings.transformation import (
@@ -1153,6 +1221,9 @@ from .llms.vertex_ai.vertex_embeddings.transformation import (
 
 vertexAITextEmbeddingConfig = VertexAITextEmbeddingConfig()
 
+
+from .llms.omnilink.chat.transformation import OmniLinkChatConfig
+from .llms.onerouter.chat.transformation import OneRouterChatConfig
 
 from .llms.bedrock.embed.amazon_titan_v2_transformation import (
     AmazonTitanV2Config,
@@ -1163,6 +1234,8 @@ from .llms.topaz.common_utils import TopazModelInfo
 # OpenAIGPTConfig, OpenAIGPT5Config, etc. are lazy loaded - instances will be created on first access
 from .llms.xai.common_utils import XAIModelInfo
 
+from .llms.shubiaobiao.chat.transformation import ShuBiaoBiaoChatConfig
+from .llms.xiakexing.chat.transformation import XiakeXingChatConfig
 # PublicAI now uses JSON-based configuration (see litellm/llms/openai_like/providers.json)
 # All remaining configs are now lazy loaded - see _lazy_imports_registry.py
 

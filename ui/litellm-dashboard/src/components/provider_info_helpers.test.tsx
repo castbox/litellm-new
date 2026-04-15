@@ -44,6 +44,36 @@ describe("provider_info_helpers", () => {
       expect(result.logo).toBe(providerLogoMap[Providers.Anthropic]);
     });
 
+    it("should map deerapi_gemini provider value to DeerAPI Gemini display name and logo", () => {
+      const result = getProviderLogoAndName("deerapi_gemini");
+      expect(result.displayName).toBe(Providers.DeerAPI_Gemini);
+      expect(result.logo).toBe(providerLogoMap[Providers.DeerAPI_Gemini]);
+    });
+
+    it("should map deerapi_claude provider value to DeerAPI Claude display name and logo", () => {
+      const result = getProviderLogoAndName("deerapi_claude");
+      expect(result.displayName).toBe(Providers.DeerAPI_Claude);
+      expect(result.logo).toBe(providerLogoMap[Providers.DeerAPI_Claude]);
+    });
+
+    it("should map ominilink_gemini provider value to OminiLink Gemini display name and logo", () => {
+      const result = getProviderLogoAndName("ominilink_gemini");
+      expect(result.displayName).toBe(Providers.OminiLink_Gemini);
+      expect(result.logo).toBe(providerLogoMap[Providers.OminiLink_Gemini]);
+    });
+
+    it("should map funcloud_claude provider value to FunCloud Claude display name and logo", () => {
+      const result = getProviderLogoAndName("funcloud_claude");
+      expect(result.displayName).toBe(Providers.FunCloudClaude);
+      expect(result.logo).toBe(providerLogoMap[Providers.FunCloudClaude]);
+    });
+
+    it("should map toapis provider value to ToAPIs display name and logo", () => {
+      const result = getProviderLogoAndName("toapis");
+      expect(result.displayName).toBe(Providers.ToAPIs);
+      expect(result.logo).toBe(providerLogoMap[Providers.ToAPIs]);
+    });
+
     it("should map azure provider value to Azure display name and logo", () => {
       const result = getProviderLogoAndName("azure");
       expect(result.displayName).toBe(Providers.Azure);
