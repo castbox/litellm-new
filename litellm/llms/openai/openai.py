@@ -700,6 +700,7 @@ class OpenAIChatCompletion(BaseLLM, BaseOpenAILLM):
                                 drop_params=drop_params,
                                 stream_options=stream_options,
                                 shared_session=shared_session,
+                                custom_llm_provider=custom_llm_provider,
                             )
                         else:
                             return self.acompletion(
@@ -744,6 +745,7 @@ class OpenAIChatCompletion(BaseLLM, BaseOpenAILLM):
                             max_retries=max_retries,
                             organization=organization,
                             stream_options=stream_options,
+                            custom_llm_provider=custom_llm_provider,
                         )
                     else:
                         if not isinstance(max_retries, int):
@@ -1007,10 +1009,15 @@ class OpenAIChatCompletion(BaseLLM, BaseOpenAILLM):
         max_retries=None,
         headers=None,
         stream_options: Optional[dict] = None,
+        custom_llm_provider: Optional[str] = None,
     ):
         data["stream"] = True
         data.update(
-            self.get_stream_options(stream_options=stream_options, api_base=api_base)
+            self.get_stream_options(
+                stream_options=stream_options,
+                api_base=api_base,
+                custom_llm_provider=custom_llm_provider,
+            )
         )
 
         openai_client: OpenAI = self._get_openai_client(  # type: ignore
@@ -1071,6 +1078,7 @@ class OpenAIChatCompletion(BaseLLM, BaseOpenAILLM):
         drop_params: Optional[bool] = None,
         stream_options: Optional[dict] = None,
         shared_session: Optional["ClientSession"] = None,
+        custom_llm_provider: Optional[str] = None,
     ):
         response = None
         data = provider_config.transform_request(
@@ -1082,7 +1090,11 @@ class OpenAIChatCompletion(BaseLLM, BaseOpenAILLM):
         )
         data["stream"] = True
         data.update(
-            self.get_stream_options(stream_options=stream_options, api_base=api_base)
+            self.get_stream_options(
+                stream_options=stream_options,
+                api_base=api_base,
+                custom_llm_provider=custom_llm_provider,
+            )
         )
         for _ in range(2):
             try:
@@ -1174,7 +1186,10 @@ class OpenAIChatCompletion(BaseLLM, BaseOpenAILLM):
                         )
 
     def get_stream_options(
-        self, stream_options: Optional[dict], api_base: Optional[str]
+        self,
+        stream_options: Optional[dict],
+        api_base: Optional[str],
+        custom_llm_provider: Optional[str] = None,
     ) -> dict:
         """
         Pass `stream_options` to the data dict for OpenAI requests
@@ -1183,7 +1198,11 @@ class OpenAIChatCompletion(BaseLLM, BaseOpenAILLM):
             return {"stream_options": stream_options}
         else:
             # by default litellm will include usage for openai endpoints
-            if api_base is None or urlparse(api_base).hostname == "api.openai.com":
+            if (
+                custom_llm_provider == "openrouter"
+                or api_base is None
+                or urlparse(api_base).hostname == "api.openai.com"
+            ):
                 return {"stream_options": {"include_usage": True}}
         return {}
 

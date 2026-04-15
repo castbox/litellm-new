@@ -3,6 +3,7 @@ import datetime
 import json
 import os
 import sys
+import types
 from datetime import timezone
 from typing import Any, cast
 
@@ -21,6 +22,7 @@ from litellm.constants import (
     LITELLM_TRUNCATION_DB_SAFEGUARD_NOTE,
     REDACTED_BY_LITELM_STRING,
 )
+import litellm.proxy
 from litellm.litellm_core_utils.safe_json_dumps import safe_dumps
 from litellm.proxy.spend_tracking.spend_tracking_utils import (
     _get_messages_for_spend_logs_payload,
@@ -40,6 +42,17 @@ from litellm.types.utils import (
     StandardLoggingModelInformation,
     StandardLoggingPayload,
 )
+
+try:
+    import litellm.proxy.proxy_server  # noqa: F401
+except ImportError:
+    proxy_server_stub = types.ModuleType("litellm.proxy.proxy_server")
+    proxy_server_stub.master_key = None
+    proxy_server_stub.general_settings = {}
+    proxy_server_stub.proxy_logging_obj = MagicMock()
+    proxy_server_stub.update_cache = AsyncMock()
+    sys.modules["litellm.proxy.proxy_server"] = proxy_server_stub
+    litellm.proxy.proxy_server = proxy_server_stub
 
 
 def test_sanitize_request_body_for_spend_logs_payload_basic():
@@ -909,6 +922,78 @@ def test_get_logging_payload_includes_overhead_in_spend_logs_metadata():
     assert (
         metadata.get("litellm_overhead_time_ms") == test_overhead_ms
     ), f"Expected overhead '{test_overhead_ms}', got '{metadata.get('litellm_overhead_time_ms')}'"
+
+
+@patch("litellm.proxy.proxy_server.master_key", None)
+@patch("litellm.proxy.proxy_server.general_settings", {})
+def test_get_logging_payload_normalizes_openrouter_cached_tokens():
+    usage_object = {
+        "prompt_tokens": 756,
+        "completion_tokens": 401,
+        "total_tokens": 1157,
+        "cost": 0.00023845,
+        "prompt_tokens_details": {
+            "cached_tokens": 755,
+            "cache_write_tokens": 0,
+            "audio_tokens": 0,
+            "video_tokens": 0,
+        },
+        "completion_tokens_details": {
+            "reasoning_tokens": 343,
+            "image_tokens": 0,
+            "audio_tokens": 0,
+        },
+    }
+
+    standard_logging_payload = cast(
+        StandardLoggingPayload,
+        {
+            "prompt_tokens": 756,
+            "completion_tokens": 401,
+            "total_tokens": 1157,
+            "metadata": {
+                "usage_object": usage_object,
+                "user_api_key_hash": "test_hash",
+            },
+            "hidden_params": {},
+            "model_map_information": None,
+            "request_tags": [],
+        },
+    )
+
+    kwargs = {
+        "model": "openrouter/x-ai/grok-4-fast",
+        "custom_llm_provider": "openrouter",
+        "call_type": "completion",
+        "litellm_params": {
+            "metadata": {
+                "user_api_key": "sk-test-key",
+            }
+        },
+        "standard_logging_object": standard_logging_payload,
+    }
+
+    response_obj = {
+        "id": "gen-1774245886-HVXFT9yYq2iBCcR35Nu7",
+        "choices": [{"message": {"content": "Hello!"}}],
+        "usage": usage_object,
+    }
+
+    payload = get_logging_payload(
+        kwargs=kwargs,
+        response_obj=response_obj,
+        start_time=datetime.datetime.now(timezone.utc),
+        end_time=datetime.datetime.now(timezone.utc),
+    )
+
+    metadata = json.loads(cast(str, payload["metadata"]))
+
+    assert metadata["usage_object"]["prompt_tokens_details"]["cached_tokens"] == 755
+    assert (
+        metadata["additional_usage_values"]["prompt_tokens_details"]["cached_tokens"]
+        == 755
+    )
+    assert metadata["additional_usage_values"]["cache_read_input_tokens"] == 755
 
 
 @patch("litellm.proxy.proxy_server.master_key", None)

@@ -583,6 +583,8 @@ class Router:
             routing_strategy=routing_strategy,
             routing_strategy_args=routing_strategy_args,
         )
+        self.custom_routing_strategy: Optional[str] = None
+        self.custom_routing_strategy_args: Optional[Dict[str, Any]] = None
         self.access_groups = None
         ## USAGE TRACKING ##
         if isinstance(litellm._async_success_callback, list):
@@ -693,6 +695,11 @@ class Router:
         Pseudo-destructor to be invoked to clean up global data structures when router is no longer used.
         For now, unhook router's callbacks from all lists
         """
+        custom_routing_strategy = getattr(self, "_custom_routing_strategy", None)
+        if isinstance(custom_routing_strategy, CustomRoutingStrategyBase):
+            custom_routing_strategy.cleanup()
+            self._custom_routing_strategy = None
+
         litellm.logging_callback_manager.remove_callback_from_list_by_object(
             litellm._async_success_callback, self
         )
@@ -8386,6 +8393,8 @@ class Router:
         vars_to_include = [
             "routing_strategy_args",
             "routing_strategy",
+            "custom_routing_strategy",
+            "custom_routing_strategy_args",
             "allowed_fails",
             "cooldown_time",
             "num_retries",
@@ -8407,7 +8416,87 @@ class Router:
                 and self.routing_strategy == "latency-based-routing"
             ):
                 _settings_to_return[var] = self.lowestlatency_logger.routing_args.json()
+            if (
+                var == "custom_routing_strategy_args"
+                and getattr(self, "custom_routing_strategy", None)
+                == "cost-latency-balanced"
+            ):
+                from litellm.router_strategy.cost_latency_balanced import (
+                    CostLatencyBalancedRouting,
+                )
+
+                current_custom_routing_strategy = getattr(
+                    self, "_custom_routing_strategy", None
+                )
+                if isinstance(
+                    current_custom_routing_strategy, CostLatencyBalancedRouting
+                ):
+                    _settings_to_return[var] = (
+                        current_custom_routing_strategy.routing_config.json()
+                    )
         return _settings_to_return
+
+    def _restore_default_routing_methods(self) -> None:
+        setattr(
+            self,
+            "get_available_deployment",
+            Router.get_available_deployment.__get__(self, Router),
+        )
+        setattr(
+            self,
+            "async_get_available_deployment",
+            Router.async_get_available_deployment.__get__(self, Router),
+        )
+
+    def clear_custom_routing_strategy(self) -> None:
+        current_custom_routing_strategy = getattr(
+            self, "_custom_routing_strategy", None
+        )
+        if isinstance(current_custom_routing_strategy, CustomRoutingStrategyBase):
+            current_custom_routing_strategy.cleanup()
+
+        self._custom_routing_strategy = None
+        self.custom_routing_strategy = None
+        self.custom_routing_strategy_args = None
+        self._restore_default_routing_methods()
+
+    def _apply_custom_routing_strategy(
+        self,
+        custom_routing_strategy: Optional[str],
+        custom_routing_strategy_args: Optional[dict] = None,
+    ) -> None:
+        if custom_routing_strategy is None:
+            self.clear_custom_routing_strategy()
+            return
+
+        if custom_routing_strategy == "cost-latency-balanced":
+            from litellm.router_strategy.cost_latency_balanced import (
+                CostLatencyBalancedRouting,
+            )
+
+            resolved_strategy_args = dict(custom_routing_strategy_args or {})
+            current_custom_routing_strategy = getattr(
+                self, "_custom_routing_strategy", None
+            )
+            if isinstance(current_custom_routing_strategy, CostLatencyBalancedRouting):
+                current_custom_routing_strategy.update_routing_config(
+                    routing_config=resolved_strategy_args
+                )
+            else:
+                self.set_custom_routing_strategy(
+                    CostLatencyBalancedRouting(
+                        router=self,
+                        routing_config=resolved_strategy_args,
+                    )
+                )
+
+            self.custom_routing_strategy = custom_routing_strategy
+            self.custom_routing_strategy_args = resolved_strategy_args
+            return
+
+        raise ValueError(
+            f"Unsupported custom routing strategy: {custom_routing_strategy}"
+        )
 
     def update_settings(self, **kwargs):
         """
@@ -8417,6 +8506,8 @@ class Router:
         _allowed_settings = [
             "routing_strategy_args",
             "routing_strategy",
+            "custom_routing_strategy",
+            "custom_routing_strategy_args",
             "allowed_fails",
             "cooldown_time",
             "num_retries",
@@ -8438,8 +8529,20 @@ class Router:
         ]
 
         _existing_router_settings = self.get_settings()
+        custom_strategy_update_requested = (
+            "custom_routing_strategy" in kwargs
+            or "custom_routing_strategy_args" in kwargs
+        )
+        resolved_custom_routing_strategy = kwargs.get(
+            "custom_routing_strategy", self.custom_routing_strategy
+        )
+        resolved_custom_routing_strategy_args = kwargs.get(
+            "custom_routing_strategy_args", self.custom_routing_strategy_args
+        )
         for var in kwargs:
             if var in _allowed_settings:
+                if var in ["custom_routing_strategy", "custom_routing_strategy_args"]:
+                    continue
                 if var in _int_settings:
                     _casted_value = int(kwargs[var])
                     setattr(self, var, _casted_value)
@@ -8458,6 +8561,12 @@ class Router:
                     setattr(self, var, kwargs[var])
             else:
                 verbose_router_logger.debug("Setting {} is not allowed".format(var))
+
+        if custom_strategy_update_requested:
+            self._apply_custom_routing_strategy(
+                custom_routing_strategy=resolved_custom_routing_strategy,
+                custom_routing_strategy_args=resolved_custom_routing_strategy_args,
+            )
         verbose_router_logger.debug(f"Updated Router settings: {self.get_settings()}")
 
     def _get_client(self, deployment, kwargs, client_type=None):
@@ -9747,6 +9856,30 @@ class Router:
         Args:
             CustomRoutingStrategy: litellm.router.CustomRoutingStrategyBase
         """
+        current_custom_routing_strategy = getattr(
+            self, "_custom_routing_strategy", None
+        )
+        if (
+            isinstance(current_custom_routing_strategy, CustomRoutingStrategyBase)
+            and current_custom_routing_strategy is not CustomRoutingStrategy
+        ):
+            current_custom_routing_strategy.cleanup()
+
+        CustomRoutingStrategy.on_attach(router=self)
+        self._custom_routing_strategy = CustomRoutingStrategy
+
+        try:
+            from litellm.router_strategy.cost_latency_balanced import (
+                CostLatencyBalancedRouting,
+            )
+
+            if isinstance(CustomRoutingStrategy, CostLatencyBalancedRouting):
+                self.custom_routing_strategy = "cost-latency-balanced"
+                self.custom_routing_strategy_args = (
+                    CustomRoutingStrategy.routing_config.json()
+                )
+        except Exception:
+            pass
 
         setattr(
             self,

@@ -76,6 +76,7 @@ _CachingHandlerResponse = None
 _LLMCachingHandler = None
 _CustomGuardrail = None
 _CustomLogger = None
+_ValidateFirstChatCompletionResponse = None
 
 
 def _get_cached_custom_logger():
@@ -151,6 +152,22 @@ def _get_cached_audio_utils():
 
         _audio_utils_module = litellm.litellm_core_utils.audio_utils.utils
     return _audio_utils_module
+
+
+def _get_cached_validate_first_chat_completion_response():
+    """
+    Get cached validate_first_chat_completion_response function.
+    Lazy imports on first call to avoid loading model_response_utils at import time.
+    Subsequent calls use cached callable for better performance.
+    """
+    global _ValidateFirstChatCompletionResponse
+    if _ValidateFirstChatCompletionResponse is None:
+        from litellm.litellm_core_utils.model_response_utils import (
+            validate_first_chat_completion_response,
+        )
+
+        _ValidateFirstChatCompletionResponse = validate_first_chat_completion_response
+    return _ValidateFirstChatCompletionResponse
 
 
 from litellm.types.llms.openai import (
@@ -1321,14 +1338,20 @@ def post_call_processing(
                 if is_coroutine is True:
                     pass
                 else:
-                    if (
-                        isinstance(original_response, ModelResponse)
-                        and len(original_response.choices) > 0
-                    ):
-                        model_response: Optional[str] = original_response.choices[
-                            0
-                        ].message.content  # type: ignore
-                        if model_response is not None:
+                    if isinstance(original_response, ModelResponse):
+                        validate_first_chat_completion_response = (
+                            _get_cached_validate_first_chat_completion_response()
+                        )
+                        validate_first_chat_completion_response(
+                            model_response=original_response,
+                            model=model,
+                            llm_provider=getattr(
+                                original_response, "_hidden_params", {}
+                            ).get("custom_llm_provider", ""),
+                        )
+
+                        model_response = original_response.choices[0].message.content  # type: ignore
+                        if isinstance(model_response, str):
                             ### POST-CALL RULES ###
                             rules_obj.post_call_rules(input=model_response, model=model)
                             ### JSON SCHEMA VALIDATION ###

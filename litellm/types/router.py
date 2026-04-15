@@ -76,6 +76,8 @@ class UpdateRouterConfig(BaseModel):
 
     routing_strategy_args: Optional[dict] = None
     routing_strategy: Optional[str] = None
+    custom_routing_strategy: Optional[str] = None
+    custom_routing_strategy_args: Optional[dict] = None
     model_group_retry_policy: Optional[dict] = None
     allowed_fails: Optional[int] = None
     cooldown_time: Optional[float] = None
@@ -595,6 +597,18 @@ class FineTuningConfig(BaseModel):
 
 
 class CustomRoutingStrategyBase:
+    def on_attach(self, router: Any) -> None:
+        """
+        Optional lifecycle hook invoked when the strategy is installed on a Router.
+        """
+        return None
+
+    def cleanup(self) -> None:
+        """
+        Optional lifecycle hook invoked before the strategy is replaced or discarded.
+        """
+        return None
+
     async def async_get_available_deployment(
         self,
         model: str,
