@@ -643,6 +643,8 @@ class ResponseAPILoggingUtils:
         """returns True if usage is from OpenAI Response API"""
         if isinstance(usage, ResponseAPIUsage):
             return True
+        if "prompt_tokens" in usage or "completion_tokens" in usage:
+            return False
         if "input_tokens" in usage and "output_tokens" in usage:
             return True
         return False

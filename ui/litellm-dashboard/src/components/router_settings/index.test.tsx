@@ -49,6 +49,7 @@ const mockCallbacksResponse = {
       target_p95_ttft_seconds: 5,
       slo_margin: 0.1,
       min_samples_for_strict_slo: 30,
+      cold_start_floor: 5,
       cold_start_exposure_interval: 20,
       max_timeout_rate_for_slo_pass: 0.02,
       max_5xx_rate_for_slo_pass: 0.06,
@@ -159,6 +160,7 @@ describe("RouterSettings", () => {
     expect(screen.getByLabelText("Target P95 TTFT (seconds)")).toHaveValue(5);
     expect(screen.getByLabelText("SLO Margin")).toHaveValue(0.1);
     expect(screen.getByLabelText("Min Samples For Strict SLO")).toHaveValue(30);
+    expect(screen.getByLabelText("Cold Start Floor")).toHaveValue(5);
     expect(screen.getByLabelText("Cold Start Exposure Interval")).toHaveValue(20);
     expect(screen.getByLabelText("Max Timeout Rate For SLO Pass")).toHaveValue(0.02);
     expect(screen.getByLabelText("Max 5xx Rate For SLO Pass")).toHaveValue(0.06);
@@ -188,6 +190,7 @@ describe("RouterSettings", () => {
             target_p95_ttft_seconds: 5,
             slo_margin: 0.1,
             min_samples_for_strict_slo: 30,
+            cold_start_floor: 5,
             cold_start_exposure_interval: 20,
             max_timeout_rate_for_slo_pass: 0.02,
             max_5xx_rate_for_slo_pass: 0.06,
@@ -227,6 +230,9 @@ describe("RouterSettings", () => {
     fireEvent.change(screen.getByLabelText("Min Samples For Strict SLO"), {
       target: { value: "12" },
     });
+    fireEvent.change(screen.getByLabelText("Cold Start Floor"), {
+      target: { value: "4" },
+    });
     fireEvent.change(screen.getByLabelText("Cold Start Exposure Interval"), {
       target: { value: "7" },
     });
@@ -256,6 +262,7 @@ describe("RouterSettings", () => {
               target_p95_ttft_seconds: 4.5,
               slo_margin: 0.2,
               min_samples_for_strict_slo: 12,
+              cold_start_floor: 4,
               cold_start_exposure_interval: 7,
               max_timeout_rate_for_slo_pass: 0.08,
               max_5xx_rate_for_slo_pass: 0.15,

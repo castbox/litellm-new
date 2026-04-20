@@ -9750,7 +9750,9 @@ async def model_info_v2(
         )
     else:
         # Normal flow when modelId is not provided
-        all_models = copy.deepcopy(llm_router.model_list)
+        # Use router.get_model_list() so visible model_group_alias entries show up in
+        # the Admin UI, matching the callable model list from older releases.
+        all_models = copy.deepcopy(llm_router.get_model_list() or [])
 
         if user_model is not None:
             # if user does not use a config.yaml, https://github.com/BerriAI/litellm/issues/2061

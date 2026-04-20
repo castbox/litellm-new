@@ -72,6 +72,21 @@ def _get_active_metrics_loggers():
     ]
 
 
+@pytest.fixture(autouse=True)
+def _cleanup_cost_latency_balanced_metrics_loggers():
+    for callback in _get_active_metrics_loggers():
+        litellm.logging_callback_manager.remove_callback_from_list_by_object(
+            litellm.callbacks, callback, require_self=False
+        )
+
+    yield
+
+    for callback in _get_active_metrics_loggers():
+        litellm.logging_callback_manager.remove_callback_from_list_by_object(
+            litellm.callbacks, callback, require_self=False
+        )
+
+
 def _set_strategy_state(
     router: Router,
     model_group: str,
@@ -128,6 +143,7 @@ def test_cost_latency_balanced_default_config_matches_unified_rollout_candidate(
     assert config.slo_margin == 0.10
     assert config.max_timeout_rate_for_slo_pass == 0.02
     assert config.max_5xx_rate_for_slo_pass == 0.06
+    assert config.cold_start_floor == 5
     assert config.weights_when_slo_met == (0.85, 0.05, 0.10)
     assert config.weights_when_slo_missed == (0.15, 0.75, 0.10)
 
@@ -468,6 +484,80 @@ def test_cost_latency_balanced_cold_start_forced_exposure_every_20_requests():
     assert selected["model_info"]["id"] == "d2"
 
 
+def test_cost_latency_balanced_cold_start_floor_prefers_least_sampled_candidate():
+    router, strategy, model_group = _build_router_and_strategy()
+
+    _set_strategy_state(
+        router=router,
+        model_group=model_group,
+        deployment_id="d1",
+        ttft_values=[1.0],
+        request_count_window=1,
+        token_count_window=100,
+        window_seconds=strategy.routing_config.window_seconds,
+    )
+    _set_strategy_state(
+        router=router,
+        model_group=model_group,
+        deployment_id="d2",
+        ttft_values=[1.0] * 40,
+        request_count_window=10,
+        token_count_window=1000,
+        window_seconds=strategy.routing_config.window_seconds,
+    )
+
+    request_kwargs = {"metadata": {}}
+    selected = router.get_available_deployment(
+        model=model_group,
+        request_kwargs=request_kwargs,
+        messages=[{"role": "user", "content": "hello"}],
+    )
+
+    assert selected["model_info"]["id"] == "d1"
+    assert (
+        request_kwargs["metadata"]["_selected_reason"]
+        == "cold_start_floor_least_sampled"
+    )
+    assert request_kwargs["metadata"]["_slo_pass_set"] == ["d2"]
+
+
+def test_cost_latency_balanced_cold_start_floor_returns_to_slo_scoring_after_floor():
+    router, strategy, model_group = _build_router_and_strategy()
+
+    _set_strategy_state(
+        router=router,
+        model_group=model_group,
+        deployment_id="d1",
+        ttft_values=[1.0] * 5,
+        request_count_window=5,
+        token_count_window=500,
+        window_seconds=strategy.routing_config.window_seconds,
+    )
+    _set_strategy_state(
+        router=router,
+        model_group=model_group,
+        deployment_id="d2",
+        ttft_values=[1.0] * 40,
+        request_count_window=10,
+        token_count_window=1000,
+        window_seconds=strategy.routing_config.window_seconds,
+    )
+
+    request_kwargs = {"metadata": {}}
+    selected = router.get_available_deployment(
+        model=model_group,
+        request_kwargs=request_kwargs,
+        messages=[{"role": "user", "content": "hello"}],
+    )
+
+    assert selected["model_info"]["id"] == "d2"
+    assert (
+        request_kwargs["metadata"]["_selected_reason"]
+        == "best_score_slo_met_reliability_gate"
+    )
+    assert request_kwargs["metadata"]["_slo_pass_set"] == ["d2"]
+
+
 def test_cost_latency_balanced_initializes_unseen_deployments_with_zero_ttft():
     router, _, model_group = _build_router_and_strategy()
 
@@ -479,7 +569,10 @@ def test_cost_latency_balanced_initializes_unseen_deployments_with_zero_ttft():
     )
 
     assert selected["model_info"]["id"] == "d2"
-    assert request_kwargs["metadata"]["_selected_reason"] == "best_score_slo_missed"
+    assert (
+        request_kwargs["metadata"]["_selected_reason"]
+        == "cold_start_floor_least_sampled"
+    )
 
     for deployment_id in ("d1", "d2"):
         cache_key = CostLatencyBalancedMetricsLogger.get_deployment_cache_key(

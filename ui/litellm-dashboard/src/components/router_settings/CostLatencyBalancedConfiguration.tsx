@@ -6,6 +6,7 @@ interface CostLatencyBalancedConfigurationProps {
     target_p95_ttft_seconds?: number;
     slo_margin?: number;
     min_samples_for_strict_slo?: number;
+    cold_start_floor?: number;
     cold_start_exposure_interval?: number;
     max_timeout_rate_for_slo_pass?: number | null;
     max_5xx_rate_for_slo_pass?: number | null;
@@ -17,6 +18,7 @@ const DEFAULT_COST_LATENCY_BALANCED_ARGS = {
   target_p95_ttft_seconds: 5.0,
   slo_margin: 0.1,
   min_samples_for_strict_slo: 30,
+  cold_start_floor: 5,
   cold_start_exposure_interval: 20,
   max_timeout_rate_for_slo_pass: 0.02,
   max_5xx_rate_for_slo_pass: 0.06,
@@ -33,6 +35,9 @@ const CostLatencyBalancedConfiguration: React.FC<CostLatencyBalancedConfiguratio
   const minSamplesForStrictSlo =
     customRoutingStrategyArgs?.min_samples_for_strict_slo ??
     DEFAULT_COST_LATENCY_BALANCED_ARGS.min_samples_for_strict_slo;
+  const coldStartFloor =
+    customRoutingStrategyArgs?.cold_start_floor ??
+    DEFAULT_COST_LATENCY_BALANCED_ARGS.cold_start_floor;
   const coldStartExposureInterval =
     customRoutingStrategyArgs?.cold_start_exposure_interval ??
     DEFAULT_COST_LATENCY_BALANCED_ARGS.cold_start_exposure_interval;
@@ -134,6 +139,27 @@ const CostLatencyBalancedConfiguration: React.FC<CostLatencyBalancedConfiguratio
               step="1"
               min="1"
               defaultValue={minSamplesForStrictSlo}
+              className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="cost-latency-cold-start-floor" className="block">
+              <span className="text-xs font-medium text-gray-700 uppercase tracking-wide">
+                Cold Start Floor
+              </span>
+              <p className="text-xs text-gray-500 mt-0.5 mb-2">
+                Minimum samples each deployment should receive before normal SLO scoring resumes.
+              </p>
+            </label>
+            <input
+              aria-label="Cold Start Floor"
+              id="cost-latency-cold-start-floor"
+              name="cost_latency_cold_start_floor"
+              type="number"
+              step="1"
+              min="0"
+              defaultValue={coldStartFloor}
               className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
             />
           </div>

@@ -18,6 +18,7 @@ import litellm
 from litellm.types.utils import (
     StandardLoggingPayload,
     Usage,
+    ModelResponseStream,
     StandardLoggingMetadata,
     StandardLoggingModelInformation,
     StandardLoggingHiddenParams,
@@ -29,6 +30,7 @@ from create_mock_standard_logging_payload import (
 from litellm.litellm_core_utils.litellm_logging import (
     StandardLoggingPayloadSetup,
 )
+from litellm.litellm_core_utils.streaming_handler import calculate_total_usage
 
 from litellm.integrations.custom_logger import CustomLogger
 
@@ -125,6 +127,138 @@ def test_get_usage_from_image_generation_response():
     assert usage.completion_tokens_details is not None
     assert usage.completion_tokens_details.image_tokens == 272
     assert usage.completion_tokens_details.text_tokens == 100
+
+
+def test_get_usage_preserves_chat_usage_when_input_output_aliases_present():
+    """
+    Some OpenAI-compatible providers return chat-completions usage with
+    prompt_tokens/completion_tokens, but also include input_tokens/output_tokens
+    aliases set to 0. This must not be treated as Responses API usage.
+    """
+    response_obj = {
+        "usage": {
+            "completion_tokens": 130,
+            "prompt_tokens": 669,
+            "total_tokens": 799,
+            "completion_tokens_details": {
+                "audio_tokens": 0,
+                "reasoning_tokens": 0,
+                "text_tokens": 130,
+            },
+            "prompt_tokens_details": {
+                "audio_tokens": 0,
+                "cached_tokens": 162,
+                "text_tokens": 669,
+            },
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "input_tokens_details": None,
+        }
+    }
+
+    usage = StandardLoggingPayloadSetup.get_usage_from_response_obj(response_obj)
+    usage_dict = StandardLoggingPayloadSetup.get_usage_as_dict(response_obj)
+
+    assert usage.prompt_tokens == 669
+    assert usage.completion_tokens == 130
+    assert usage.total_tokens == 799
+    assert usage.prompt_tokens_details is not None
+    assert usage.prompt_tokens_details.cached_tokens == 162
+
+    assert usage_dict["prompt_tokens"] == 669
+    assert usage_dict["completion_tokens"] == 130
+    assert usage_dict["total_tokens"] == 799
+    assert usage_dict["prompt_tokens_details"]["cached_tokens"] == 162
+
+
+def test_calculate_total_usage_preserves_prompt_token_details():
+    """
+    OpenAI-compatible streaming providers can return provider-side prompt cache
+    usage on the final usage chunk. The hidden usage added to the final stream
+    chunk must preserve that nested detail for spend logs.
+    """
+    chunk = ModelResponseStream(
+        id="chatcmpl-cache-details",
+        choices=[],
+        created=1721353246,
+        model="grok-4-fast-non-reasoning",
+        usage={
+            "completion_tokens": 130,
+            "prompt_tokens": 669,
+            "total_tokens": 799,
+            "completion_tokens_details": {
+                "audio_tokens": 0,
+                "reasoning_tokens": 0,
+                "text_tokens": 130,
+            },
+            "prompt_tokens_details": {
+                "audio_tokens": 0,
+                "cached_tokens": 162,
+                "text_tokens": 669,
+            },
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "input_tokens_details": None,
+        },
+    )
+
+    usage = calculate_total_usage(chunks=[chunk])
+
+    assert usage.prompt_tokens == 669
+    assert usage.completion_tokens == 130
+    assert usage.total_tokens == 799
+    assert usage.prompt_tokens_details is not None
+    assert usage.prompt_tokens_details.cached_tokens == 162
+    assert usage.prompt_tokens_details.text_tokens == 669
+    assert usage.completion_tokens_details is not None
+    assert usage.completion_tokens_details.text_tokens == 130
+
+
+@pytest.mark.asyncio
+async def test_daily_spend_transaction_reads_cached_tokens_from_prompt_details():
+    from litellm.proxy.db.db_spend_update_writer import DBSpendUpdateWriter
+
+    class MockPrismaClient:
+        @staticmethod
+        def get_request_status(payload):
+            return "success"
+
+    writer = DBSpendUpdateWriter()
+    payload = {
+        "user": "user-1",
+        "startTime": datetime.now(),
+        "api_key": "sk-test",
+        "model": "shubiaobiao/grok-4-fast-non-reasoning",
+        "model_group": "grok-4-fast-non-reasoning",
+        "custom_llm_provider": "shubiaobiao",
+        "call_type": "completion",
+        "prompt_tokens": 669,
+        "completion_tokens": 130,
+        "spend": 0.01,
+        "metadata": json.dumps(
+            {
+                "usage_object": {
+                    "prompt_tokens": 669,
+                    "completion_tokens": 130,
+                    "total_tokens": 799,
+                    "prompt_tokens_details": {
+                        "audio_tokens": 0,
+                        "cached_tokens": 162,
+                        "text_tokens": 669,
+                    },
+                }
+            }
+        ),
+    }
+
+    transaction = await writer._common_add_spend_log_transaction_to_daily_transaction(
+        payload=payload,
+        prisma_client=MockPrismaClient(),
+    )
+
+    assert transaction is not None
+    assert transaction["cache_read_input_tokens"] == 162
+    assert transaction["cache_creation_input_tokens"] == 0
 
 
 def test_get_additional_headers():

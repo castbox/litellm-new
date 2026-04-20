@@ -89,6 +89,42 @@ class DBSpendUpdateWriter:
         self.daily_org_spend_update_queue = DailySpendUpdateQueue()
         self.daily_tag_spend_update_queue = DailySpendUpdateQueue()
 
+    @staticmethod
+    def _get_nested_prompt_token_detail(
+        usage_obj: dict,
+        detail_key: str,
+    ) -> int:
+        prompt_tokens_details = usage_obj.get("prompt_tokens_details") or {}
+        if not isinstance(prompt_tokens_details, dict):
+            return 0
+        detail_value = prompt_tokens_details.get(detail_key, 0) or 0
+        return detail_value if isinstance(detail_value, int) else 0
+
+    @staticmethod
+    def _get_cache_read_input_tokens(usage_obj: dict) -> int:
+        cache_read_input_tokens = usage_obj.get("cache_read_input_tokens", 0) or 0
+        if isinstance(cache_read_input_tokens, int) and cache_read_input_tokens > 0:
+            return cache_read_input_tokens
+        return DBSpendUpdateWriter._get_nested_prompt_token_detail(
+            usage_obj=usage_obj,
+            detail_key="cached_tokens",
+        )
+
+    @staticmethod
+    def _get_cache_creation_input_tokens(usage_obj: dict) -> int:
+        cache_creation_input_tokens = (
+            usage_obj.get("cache_creation_input_tokens", 0) or 0
+        )
+        if (
+            isinstance(cache_creation_input_tokens, int)
+            and cache_creation_input_tokens > 0
+        ):
+            return cache_creation_input_tokens
+        return DBSpendUpdateWriter._get_nested_prompt_token_detail(
+            usage_obj=usage_obj,
+            detail_key="cache_creation_tokens",
+        )
+
     async def update_database(
         # LiteLLM management object fields
         self,
@@ -1932,12 +1968,10 @@ class DBSpendUpdateWriter:
                 api_requests=1,
                 successful_requests=1 if request_status == "success" else 0,
                 failed_requests=1 if request_status != "success" else 0,
-                cache_read_input_tokens=usage_obj.get("cache_read_input_tokens", 0)
-                or 0,
-                cache_creation_input_tokens=usage_obj.get(
-                    "cache_creation_input_tokens", 0
-                )
-                or 0,
+                cache_read_input_tokens=self._get_cache_read_input_tokens(usage_obj),
+                cache_creation_input_tokens=self._get_cache_creation_input_tokens(
+                    usage_obj
+                ),
             )
             return daily_transaction
         except Exception as e:

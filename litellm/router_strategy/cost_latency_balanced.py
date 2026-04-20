@@ -42,6 +42,7 @@ class CostLatencyBalancedRoutingConfig(LiteLLMPydanticObjectBase):
     slo_margin: float = 0.10
     window_seconds: int = 600
     min_samples_for_strict_slo: int = 30
+    cold_start_floor: int = 5
     max_timeout_rate_for_slo_pass: Optional[float] = 0.02
     max_5xx_rate_for_slo_pass: Optional[float] = 0.06
     epsilon_explore: float = 0.05
@@ -917,6 +918,13 @@ class CostLatencyBalancedRouting(CustomRoutingStrategyBase):
         selected_reason = "best_score_slo_missed"
         selected_candidate: Optional[Dict[str, Any]] = None
         scored_candidates: List[Dict[str, Any]] = []
+        cold_start_floor = max(0, int(self.routing_config.cold_start_floor))
+        cold_start_floor_candidates = [
+            c
+            for c in candidates
+            if c["sample_count"] < cold_start_floor
+            and c["is_hard_failed"] is False
+        ]
         cold_start_candidates = [
             c
             for c in candidates
@@ -929,6 +937,28 @@ class CostLatencyBalancedRouting(CustomRoutingStrategyBase):
             % max(1, self.routing_config.cold_start_exposure_interval)
             == 0
         )
+
+        if len(cold_start_floor_candidates) > 0:
+            min_sample_count = min(
+                c["sample_count"] for c in cold_start_floor_candidates
+            )
+            least_sampled_candidates = [
+                c
+                for c in cold_start_floor_candidates
+                if c["sample_count"] == min_sample_count
+            ]
+            scored_candidates = self._score_candidates(
+                candidates=candidates,
+                weights=self.weights_when_slo_missed,
+            )
+            selected_candidate = self._random.choice(least_sampled_candidates)
+            selected_reason = "cold_start_floor_least_sampled"
+            return (
+                selected_candidate,
+                scored_candidates,
+                selected_reason,
+                slo_pass_candidates,
+            )
 
         if should_force_cold_start_exposure:
             if len(slo_pass_candidates) > 0:

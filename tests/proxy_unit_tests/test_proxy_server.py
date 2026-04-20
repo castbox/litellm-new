@@ -2125,6 +2125,56 @@ async def test_proxy_model_group_alias_checks(prisma_client, hidden):
         assert is_model_alias_in_list, f"models: {models}"
 
 
+@pytest.mark.parametrize("hidden", [True, False])
+@pytest.mark.asyncio
+async def test_v2_model_info_includes_visible_model_group_aliases(hidden):
+    """
+    Regression test for Admin UI model list data source.
+
+    `/v2/model/info` powers the Model Management page, so it should surface
+    non-hidden model_group_alias entries in the same way that `/model_group/info`
+    does. Hidden aliases should still be excluded.
+    """
+    from litellm.proxy.proxy_server import model_info_v2
+
+    _model_list = [
+        {
+            "model_name": "gpt-3.5-turbo",
+            "litellm_params": {"model": "gpt-3.5-turbo"},
+            "model_info": {"id": "deployment-1"},
+        }
+    ]
+    model_alias = "strategy-balanced-test1"
+    router = litellm.Router(
+        model_list=_model_list,
+        model_group_alias={
+            model_alias: {"model": "gpt-3.5-turbo", "hidden": hidden}
+        },
+    )
+
+    original_router = getattr(litellm.proxy.proxy_server, "llm_router", None)
+    original_prisma = getattr(litellm.proxy.proxy_server, "prisma_client", None)
+    proxy_config = getattr(litellm.proxy.proxy_server, "proxy_config")
+
+    setattr(litellm.proxy.proxy_server, "llm_router", router)
+    setattr(litellm.proxy.proxy_server, "prisma_client", object())
+    try:
+        with patch.object(proxy_config, "get_config", new=AsyncMock(return_value={})):
+            response = await model_info_v2(
+                user_api_key_dict=UserAPIKeyAuth(models=[]),
+            )
+
+        model_names = [item["model_name"] for item in response["data"]]
+
+        if hidden:
+            assert model_alias not in model_names
+        else:
+            assert model_alias in model_names, f"models: {model_names}"
+    finally:
+        setattr(litellm.proxy.proxy_server, "llm_router", original_router)
+        setattr(litellm.proxy.proxy_server, "prisma_client", original_prisma)
+
+
 @pytest.mark.asyncio
 @pytest.mark.skip(reason="Requires reliable external DB connection (prisma).")
 async def test_proxy_model_group_info_rerank(prisma_client):

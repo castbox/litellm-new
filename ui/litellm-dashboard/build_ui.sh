@@ -2,7 +2,8 @@
 
 set -euo pipefail
 
-NODE_VERSION="${NODE_VERSION:-v20}"
+RAW_NODE_VERSION="${NODE_VERSION:-20}"
+NODE_VERSION="${RAW_NODE_VERSION#v}"
 export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 
 if [ ! -s "$NVM_DIR/nvm.sh" ]; then
@@ -22,6 +23,17 @@ npm --version
 # print contents of ui_colors.json
 echo "Contents of ui_colors.json:"
 cat ui_colors.json
+
+# Docker builds copy the dashboard source without node_modules, and local
+# worktrees can also have a stale dependency tree. Ensure the install is
+# present and healthy before attempting `next build`.
+if ! npm ls --depth=0 > /dev/null 2>&1; then
+  if [ -f package-lock.json ]; then
+    npm ci --no-audit --no-fund
+  else
+    npm install --no-audit --no-fund
+  fi
+fi
 
 # Run npm build
 npm run build

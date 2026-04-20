@@ -2348,18 +2348,33 @@ def calculate_total_usage(chunks: List[ModelResponse]) -> Usage:
     """Assume most recent usage chunk has total usage uptil then."""
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    latest_usage: Optional[Dict[str, Any]] = None
     for chunk in chunks:
         if "usage" in chunk and chunk["usage"] is not None:
-            if "prompt_tokens" in chunk["usage"]:
-                prompt_tokens = chunk["usage"].get("prompt_tokens", 0) or 0
-            if "completion_tokens" in chunk["usage"]:
-                completion_tokens = chunk["usage"].get("completion_tokens", 0) or 0
+            usage = chunk["usage"]
+            if isinstance(usage, BaseModel):
+                latest_usage = usage.model_dump()
+            elif isinstance(usage, dict):
+                latest_usage = usage
+            else:
+                latest_usage = None
 
-    returned_usage_chunk = Usage(
-        prompt_tokens=prompt_tokens,
-        completion_tokens=completion_tokens,
-        total_tokens=prompt_tokens + completion_tokens,
+            if latest_usage is None:
+                continue
+
+            if "prompt_tokens" in latest_usage:
+                prompt_tokens = latest_usage.get("prompt_tokens", 0) or 0
+            if "completion_tokens" in latest_usage:
+                completion_tokens = latest_usage.get("completion_tokens", 0) or 0
+
+    usage_kwargs = latest_usage.copy() if latest_usage is not None else {}
+    usage_kwargs["prompt_tokens"] = prompt_tokens
+    usage_kwargs["completion_tokens"] = completion_tokens
+    usage_kwargs["total_tokens"] = (
+        usage_kwargs.get("total_tokens") or prompt_tokens + completion_tokens
     )
+
+    returned_usage_chunk = Usage(**usage_kwargs)
 
     return returned_usage_chunk
 

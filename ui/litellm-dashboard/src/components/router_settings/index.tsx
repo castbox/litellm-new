@@ -191,6 +191,9 @@ const RouterSettings: React.FC<RouterSettingsProps> = ({ accessToken, userRole, 
       const minSamplesForStrictSloElement = document.querySelector(
         `input[name="cost_latency_min_samples_for_strict_slo"]`,
       ) as HTMLInputElement | null;
+      const coldStartFloorElement = document.querySelector(
+        `input[name="cost_latency_cold_start_floor"]`,
+      ) as HTMLInputElement | null;
       const coldStartExposureIntervalElement = document.querySelector(
         `input[name="cost_latency_cold_start_exposure_interval"]`,
       ) as HTMLInputElement | null;
@@ -246,6 +249,10 @@ const RouterSettings: React.FC<RouterSettingsProps> = ({ accessToken, userRole, 
         min_samples_for_strict_slo: parseIntegerInput(
           minSamplesForStrictSloElement,
           existingCustomRoutingStrategyArgs.min_samples_for_strict_slo,
+        ),
+        cold_start_floor: parseIntegerInput(
+          coldStartFloorElement,
+          existingCustomRoutingStrategyArgs.cold_start_floor,
         ),
         cold_start_exposure_interval: parseIntegerInput(
           coldStartExposureIntervalElement,
