@@ -1570,6 +1570,11 @@ class CustomStreamWrapper:
                         and self.stream_options["include_usage"] is True
                     ):
                         return model_response
+                    # Keep provider usage-only chunks (choices=[]) for final
+                    # stream assembly and logging, even when the caller did
+                    # not request a visible usage chunk.
+                    if getattr(model_response, "usage", None) is not None:
+                        return model_response
                     return
             ## CHECK FOR TOOL USE
 

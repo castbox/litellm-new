@@ -30,7 +30,10 @@ from create_mock_standard_logging_payload import (
 from litellm.litellm_core_utils.litellm_logging import (
     StandardLoggingPayloadSetup,
 )
-from litellm.litellm_core_utils.streaming_handler import calculate_total_usage
+from litellm.litellm_core_utils.streaming_handler import (
+    CustomStreamWrapper,
+    calculate_total_usage,
+)
 from litellm.litellm_core_utils.streaming_chunk_builder_utils import ChunkProcessor
 
 from litellm.integrations.custom_logger import CustomLogger
@@ -360,6 +363,135 @@ def test_standard_logging_payload_preserves_streamed_prompt_cache_details():
     assert usage_object["prompt_tokens_details"]["cached_tokens"] == 162
     assert usage_object["prompt_tokens_details"]["text_tokens"] == 669
     assert usage_object["completion_tokens_details"]["reasoning_tokens"] == 0
+
+
+def test_sync_streaming_logging_preserves_usage_only_chunk_prompt_cache_details(
+    monkeypatch,
+):
+    """
+    Sync OpenAI-compatible streams can send a stop chunk followed by a
+    usage-only chunk with choices=[] and prompt_tokens_details. Even when
+    stream_options.include_usage is False, LiteLLM still needs to keep that
+    usage-only chunk internally for final logging/spend tracking.
+    """
+    from litellm.litellm_core_utils import streaming_handler as streaming_handler_module
+    from litellm.litellm_core_utils.litellm_logging import Logging
+
+    class _ImmediateFuture:
+        def result(self):
+            return None
+
+    class _ImmediateExecutor:
+        def submit(self, fn, *args, **kwargs):
+            fn(*args, **kwargs)
+            return _ImmediateFuture()
+
+    stop_chunk = ModelResponseStream(
+        id="da87cddd-d22a-9b1a-8811-adce5de07366",
+        created=1776741712,
+        model="shubiaobiao/grok-4-fast-non-reasoning",
+        choices=[
+            litellm.utils.StreamingChoices(
+                finish_reason="stop",
+                index=0,
+                delta=litellm.utils.Delta(content="poem end"),
+            )
+        ],
+    )
+    usage_chunk = ModelResponseStream(
+        id="da87cddd-d22a-9b1a-8811-adce5de07366",
+        created=1776741712,
+        model="shubiaobiao/grok-4-fast-non-reasoning",
+        choices=[],
+        usage={
+            "completion_tokens": 149,
+            "prompt_tokens": 669,
+            "total_tokens": 818,
+            "completion_tokens_details": {
+                "accepted_prediction_tokens": None,
+                "audio_tokens": 0,
+                "reasoning_tokens": 0,
+                "rejected_prediction_tokens": None,
+                "text_tokens": 0,
+                "image_tokens": 0,
+            },
+            "prompt_tokens_details": {
+                "audio_tokens": 0,
+                "cached_tokens": 162,
+                "text_tokens": 669,
+                "image_tokens": 0,
+            },
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "input_tokens_details": None,
+            "claude_cache_creation_5_m_tokens": 0,
+            "claude_cache_creation_1_h_tokens": 0,
+        },
+    )
+
+    logging_obj = Logging(
+        model="strategy-balanced-test1",
+        messages=[{"role": "user", "content": "给我写一首诗"}],
+        stream=True,
+        call_type="completion",
+        start_time=datetime.now(),
+        litellm_call_id="call-1",
+        function_id="test-function",
+    )
+    logging_obj.model_call_details.update(
+        {
+            "model": "strategy-balanced-test1",
+            "messages": [{"role": "user", "content": "给我写一首诗"}],
+            "stream": True,
+            "call_type": "completion",
+            "custom_llm_provider": "shubiaobiao",
+            "litellm_params": {
+                "metadata": {
+                    "model_group": "strategy-balanced-test1",
+                    "user_api_key_alias": "ai-seek",
+                    "user_api_key_team_id": "ea9c3442-2251-41bd-a951-e5ab8e8f3f3a",
+                    "user_api_key_user_id": "default_user_id",
+                    "user_api_key_team_alias": "ai-seek",
+                }
+            },
+        }
+    )
+    logging_obj.async_success_handler = AsyncMock(return_value=None)
+
+    monkeypatch.setattr(streaming_handler_module, "executor", _ImmediateExecutor())
+
+    wrapper = CustomStreamWrapper(
+        completion_stream=iter([stop_chunk, usage_chunk]),
+        model="strategy-balanced-test1",
+        logging_obj=logging_obj,
+        custom_llm_provider="shubiaobiao",
+        stream_options=None,
+    )
+
+    with pytest.raises(StopIteration):
+        while True:
+            next(wrapper)
+
+    complete_streaming_response = logging_obj.model_call_details.get(
+        "complete_streaming_response"
+    )
+    assert complete_streaming_response is not None
+    assert complete_streaming_response.usage is not None
+    assert complete_streaming_response.usage.prompt_tokens == 669
+    assert complete_streaming_response.usage.completion_tokens == 149
+    assert complete_streaming_response.usage.prompt_tokens_details is not None
+    assert (
+        complete_streaming_response.usage.prompt_tokens_details.cached_tokens == 162
+    )
+
+    standard_logging_object = logging_obj.model_call_details.get(
+        "standard_logging_object"
+    )
+    assert standard_logging_object is not None
+    usage_object = standard_logging_object["metadata"]["usage_object"]
+    assert usage_object["prompt_tokens"] == 669
+    assert usage_object["completion_tokens"] == 149
+    assert usage_object["prompt_tokens_details"]["cached_tokens"] == 162
 
 
 @pytest.mark.asyncio
