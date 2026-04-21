@@ -31,6 +31,7 @@ from litellm.litellm_core_utils.litellm_logging import (
     StandardLoggingPayloadSetup,
 )
 from litellm.litellm_core_utils.streaming_handler import calculate_total_usage
+from litellm.litellm_core_utils.streaming_chunk_builder_utils import ChunkProcessor
 
 from litellm.integrations.custom_logger import CustomLogger
 
@@ -164,6 +165,7 @@ def test_get_usage_preserves_chat_usage_when_input_output_aliases_present():
     assert usage.total_tokens == 799
     assert usage.prompt_tokens_details is not None
     assert usage.prompt_tokens_details.cached_tokens == 162
+    assert usage.prompt_tokens_details.text_tokens == 669
 
     assert usage_dict["prompt_tokens"] == 669
     assert usage_dict["completion_tokens"] == 130
@@ -212,6 +214,152 @@ def test_calculate_total_usage_preserves_prompt_token_details():
     assert usage.prompt_tokens_details.text_tokens == 669
     assert usage.completion_tokens_details is not None
     assert usage.completion_tokens_details.text_tokens == 130
+
+
+def test_streaming_usage_preserves_prompt_details_from_previous_usage_chunk():
+    """
+    Some streaming paths can have more than one usage-bearing chunk. A later
+    usage chunk without prompt_tokens_details must not erase cached_tokens
+    already seen on an earlier provider usage chunk.
+    """
+    chunks = [
+        ModelResponseStream(
+            id="chatcmpl-cache-details",
+            choices=[],
+            created=1721353246,
+            model="grok-4-fast-non-reasoning",
+            usage={
+                "completion_tokens": 130,
+                "prompt_tokens": 669,
+                "total_tokens": 799,
+                "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 162,
+                    "text_tokens": 669,
+                },
+            },
+        ),
+        ModelResponseStream(
+            id="chatcmpl-local-hidden-usage",
+            choices=[],
+            created=1721353246,
+            model="grok-4-fast-non-reasoning",
+            usage={
+                "completion_tokens": 130,
+                "prompt_tokens": 669,
+                "total_tokens": 799,
+                "completion_tokens_details": {"reasoning_tokens": 0},
+            },
+        ),
+    ]
+
+    usage = ChunkProcessor(chunks=chunks, messages=[]).calculate_usage(
+        chunks=chunks,
+        model="grok-4-fast-non-reasoning",
+        completion_output="hello",
+        messages=[],
+        reasoning_tokens=0,
+    )
+
+    assert usage.prompt_tokens_details is not None
+    assert usage.prompt_tokens_details.cached_tokens == 162
+    assert usage.prompt_tokens_details.text_tokens == 669
+
+
+def test_standard_logging_payload_preserves_streamed_prompt_cache_details():
+    """
+    Regression test for sync/async streaming providers that send a final
+    usage-only chunk after the stop chunk. The standard logging payload should
+    preserve provider prompt cache details from that final usage chunk.
+    """
+    from litellm.litellm_core_utils.litellm_logging import Logging
+
+    stop_chunk = ModelResponseStream(
+        id="da87cddd-d22a-9b1a-8811-adce5de07366",
+        created=1776741712,
+        model="shubiaobiao/grok-4-fast-non-reasoning",
+        choices=[
+            litellm.utils.StreamingChoices(
+                finish_reason="stop",
+                index=0,
+                delta=litellm.utils.Delta(content="poem end"),
+            )
+        ],
+    )
+    usage_chunk = ModelResponseStream(
+        id="da87cddd-d22a-9b1a-8811-adce5de07366",
+        created=1776741712,
+        model="shubiaobiao/grok-4-fast-non-reasoning",
+        choices=[],
+        usage={
+            "completion_tokens": 149,
+            "prompt_tokens": 669,
+            "total_tokens": 818,
+            "completion_tokens_details": {
+                "accepted_prediction_tokens": None,
+                "audio_tokens": 0,
+                "reasoning_tokens": 0,
+                "rejected_prediction_tokens": None,
+                "text_tokens": 0,
+                "image_tokens": 0,
+            },
+            "prompt_tokens_details": {
+                "audio_tokens": 0,
+                "cached_tokens": 162,
+                "text_tokens": 669,
+                "image_tokens": 0,
+            },
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "input_tokens_details": None,
+            "claude_cache_creation_5_m_tokens": 0,
+            "claude_cache_creation_1_h_tokens": 0,
+        },
+    )
+
+    final_response = litellm.stream_chunk_builder(
+        chunks=[stop_chunk, usage_chunk],
+        messages=[{"role": "user", "content": "给我写一首诗"}],
+    )
+
+    logging_obj = Logging(
+        model="strategy-balanced-test1",
+        messages=[{"role": "user", "content": "给我写一首诗"}],
+        stream=True,
+        call_type="completion",
+        start_time=datetime.now(),
+        litellm_call_id="call-1",
+        function_id="test-function",
+    )
+    logging_obj.model_call_details.update(
+        {
+            "model": "strategy-balanced-test1",
+            "messages": [{"role": "user", "content": "给我写一首诗"}],
+            "stream": True,
+            "call_type": "completion",
+            "custom_llm_provider": "shubiaobiao",
+            "litellm_params": {
+                "metadata": {
+                    "model_group": "strategy-balanced-test1",
+                    "user_api_key_alias": "ai-seek",
+                    "user_api_key_team_id": "ea9c3442-2251-41bd-a951-e5ab8e8f3f3a",
+                    "user_api_key_user_id": "default_user_id",
+                    "user_api_key_team_alias": "ai-seek",
+                }
+            },
+        }
+    )
+
+    payload = logging_obj._build_standard_logging_payload(
+        final_response,
+        start_time=datetime.now(),
+        end_time=datetime.now(),
+    )
+
+    usage_object = payload["metadata"]["usage_object"]
+    assert usage_object["prompt_tokens_details"]["cached_tokens"] == 162
+    assert usage_object["prompt_tokens_details"]["text_tokens"] == 669
+    assert usage_object["completion_tokens_details"]["reasoning_tokens"] == 0
 
 
 @pytest.mark.asyncio

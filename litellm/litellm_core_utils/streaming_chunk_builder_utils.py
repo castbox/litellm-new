@@ -628,7 +628,8 @@ class ChunkProcessor:
                         "web_search_requests",
                     )
 
-                prompt_tokens_details = usage_chunk_dict["prompt_tokens_details"]
+                if usage_chunk_dict["prompt_tokens_details"] is not None:
+                    prompt_tokens_details = usage_chunk_dict["prompt_tokens_details"]
 
         return UsagePerChunk(
             prompt_tokens=prompt_tokens,
