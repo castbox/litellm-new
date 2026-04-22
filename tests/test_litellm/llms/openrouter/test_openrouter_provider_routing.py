@@ -88,3 +88,19 @@ class TestOpenRouterNativeModelRouting:
         result_model, provider, _, _ = litellm.get_llm_provider(model=input_model)
         assert provider == "openrouter"
         assert result_model == expected_model
+
+    @pytest.mark.parametrize(
+        "input_model",
+        [
+            "x-ai/grok-4-fast",
+            "anthropic/claude-haiku-4.5",
+        ],
+    )
+    def test_custom_openrouter_provider_keeps_non_native_model_name(self, input_model):
+        """Provider override should not prepend openrouter/ for regular models."""
+        result_model, provider, _, _ = litellm.get_llm_provider(
+            model=input_model,
+            custom_llm_provider="openrouter",
+        )
+        assert provider == "openrouter"
+        assert result_model == input_model
