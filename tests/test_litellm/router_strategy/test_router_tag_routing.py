@@ -446,3 +446,47 @@ def test_get_tags_from_request_kwargs_various_inputs():
 
     # No relevant keys present
     assert _get_tags_from_request_kwargs({"foo": "bar"}) == []
+
+
+@pytest.mark.asyncio()
+async def test_tag_routing_ignores_credential_tracking_tags_on_retry():
+    """
+    Simulate a retry on the same request after a deployment injects its
+    credential tracking tag into metadata.tags.
+
+    Tag routing should continue to use the original request tags, not the
+    deployment-injected observability tag.
+    """
+    from litellm.router_strategy.tag_based_routing import get_deployments_for_tag
+
+    router = litellm.Router(
+        model_list=[
+            {
+                "model_name": "ai-seek-grok-fast",
+                "litellm_params": {
+                    "model": "xai/grok-4-1-fast",
+                    "litellm_credential_name": "shubiaobiao-ai-seek",
+                },
+                "model_info": {"id": "grok-fast-1"},
+            },
+        ],
+        enable_tag_filtering=True,
+    )
+
+    kwargs = {"metadata": {}}
+    router._update_kwargs_before_fallbacks(
+        model="ai-seek-grok-fast",
+        kwargs=kwargs,
+    )
+
+    deployment = router.model_list[0]
+    router._update_kwargs_with_deployment(deployment=deployment, kwargs=kwargs)
+
+    healthy_deployments = await get_deployments_for_tag(
+        llm_router_instance=router,
+        model="ai-seek-grok-fast",
+        healthy_deployments=[deployment],
+        request_kwargs=kwargs,
+    )
+
+    assert healthy_deployments == [deployment]

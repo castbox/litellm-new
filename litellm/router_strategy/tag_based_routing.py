@@ -20,6 +20,9 @@ else:
     LitellmRouter = Any
 
 
+TAG_ROUTING_REQUEST_TAGS_METADATA_KEY = "tag_routing_request_tags"
+
+
 def _is_valid_deployment_tag_regex(
     tag_regexes: List[str],
     header_strings: List[str],
@@ -152,7 +155,9 @@ async def get_deployments_for_tag(
     )
     if metadata_variable_name in request_kwargs:
         metadata = request_kwargs[metadata_variable_name]
-        request_tags = metadata.get("tags")
+        request_tags = metadata.get(
+            TAG_ROUTING_REQUEST_TAGS_METADATA_KEY, metadata.get("tags")
+        )
         match_any = llm_router_instance.tag_filtering_match_any
 
         # Build header strings for regex matching from what the proxy already stores.

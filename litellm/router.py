@@ -74,7 +74,10 @@ from litellm.router_strategy.lowest_latency import LowestLatencyLoggingHandler
 from litellm.router_strategy.lowest_tpm_rpm import LowestTPMLoggingHandler
 from litellm.router_strategy.lowest_tpm_rpm_v2 import LowestTPMLoggingHandler_v2
 from litellm.router_strategy.simple_shuffle import simple_shuffle
-from litellm.router_strategy.tag_based_routing import get_deployments_for_tag
+from litellm.router_strategy.tag_based_routing import (
+    TAG_ROUTING_REQUEST_TAGS_METADATA_KEY,
+    get_deployments_for_tag,
+)
 from litellm.router_utils.add_retry_fallback_headers import (
     add_fallback_headers_to_response,
     add_retry_headers_to_response,
@@ -2186,9 +2189,16 @@ class Router:
         model_group_alias: Optional[str] = None
         if self._get_model_from_alias(model=model):
             model_group_alias = model
-        kwargs.setdefault(metadata_variable_name, {}).update(
-            {"model_group": model, "model_group_alias": model_group_alias}
-        )
+        metadata = kwargs.setdefault(metadata_variable_name, {})
+        metadata.update({"model_group": model, "model_group_alias": model_group_alias})
+        if TAG_ROUTING_REQUEST_TAGS_METADATA_KEY not in metadata:
+            request_tags = metadata.get("tags")
+            if isinstance(request_tags, list):
+                metadata[TAG_ROUTING_REQUEST_TAGS_METADATA_KEY] = list(request_tags)
+            elif request_tags is None:
+                metadata[TAG_ROUTING_REQUEST_TAGS_METADATA_KEY] = []
+            else:
+                metadata[TAG_ROUTING_REQUEST_TAGS_METADATA_KEY] = [request_tags]
 
     def _set_deployment_num_retries_on_exception(
         self, exception: Exception, deployment: dict
