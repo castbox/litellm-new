@@ -321,6 +321,48 @@ def test_cost_latency_balanced_prefers_lower_cost_within_slo():
     assert sorted(request_kwargs["metadata"]["_slo_pass_set"]) == ["d1", "d2"]
 
 
+def test_cost_latency_balanced_copies_debug_metadata_to_spend_logs_metadata():
+    router, strategy, model_group = _build_router_and_strategy()
+
+    _set_strategy_state(
+        router=router,
+        model_group=model_group,
+        deployment_id="d1",
+        ttft_values=[1.0] * 40,
+        request_count_window=10,
+        token_count_window=1000,
+        window_seconds=strategy.routing_config.window_seconds,
+    )
+    _set_strategy_state(
+        router=router,
+        model_group=model_group,
+        deployment_id="d2",
+        ttft_values=[1.5] * 40,
+        request_count_window=10,
+        token_count_window=1000,
+        window_seconds=strategy.routing_config.window_seconds,
+    )
+
+    request_kwargs = {"metadata": {"spend_logs_metadata": {"existing": "value"}}}
+    selected = router.get_available_deployment(
+        model=model_group,
+        request_kwargs=request_kwargs,
+        messages=[{"role": "user", "content": "hello"}],
+    )
+
+    spend_logs_metadata = request_kwargs["metadata"]["spend_logs_metadata"]
+    assert selected["model_info"]["id"] == "d2"
+    assert spend_logs_metadata["existing"] == "value"
+    assert spend_logs_metadata["_selected_deployment_id"] == "d2"
+    assert (
+        spend_logs_metadata["_selected_reason"]
+        == request_kwargs["metadata"]["_selected_reason"]
+    )
+    assert spend_logs_metadata["_resolved_routing_mode"] == "balanced"
+    assert sorted(spend_logs_metadata["_slo_pass_set"]) == ["d1", "d2"]
+    assert sorted(spend_logs_metadata["_score_breakdown"].keys()) == ["d1", "d2"]
+
+
 def test_cost_latency_balanced_filters_out_over_slo_even_if_cheaper():
     router, strategy, model_group = _build_router_and_strategy()
 

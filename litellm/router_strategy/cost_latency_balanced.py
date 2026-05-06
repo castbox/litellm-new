@@ -1320,11 +1320,20 @@ class CostLatencyBalancedRouting(CustomRoutingStrategyBase):
                 "load_norm": scored_candidate.get("load_norm"),
             }
 
-        metadata["_slo_pass_set"] = slo_pass_ids
-        metadata["_score_breakdown"] = score_breakdown
-        metadata["_selected_reason"] = selected_reason
-        metadata["_selected_deployment_id"] = selected_candidate.get("deployment_id")
-        metadata["_resolved_routing_mode"] = routing_mode
+        debug_metadata = {
+            "_slo_pass_set": slo_pass_ids,
+            "_score_breakdown": score_breakdown,
+            "_selected_reason": selected_reason,
+            "_selected_deployment_id": selected_candidate.get("deployment_id"),
+            "_resolved_routing_mode": routing_mode,
+        }
+        metadata.update(debug_metadata)
+
+        spend_logs_metadata = metadata.get("spend_logs_metadata")
+        if not isinstance(spend_logs_metadata, dict):
+            spend_logs_metadata = {}
+            metadata["spend_logs_metadata"] = spend_logs_metadata
+        spend_logs_metadata.update(debug_metadata)
 
     def _compute_deployment_cost(self, deployment: Dict[str, Any]) -> float:
         litellm_params = deployment.get("litellm_params", {}) or {}
