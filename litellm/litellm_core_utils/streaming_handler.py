@@ -28,7 +28,6 @@ from litellm import verbose_logger
 from litellm._uuid import uuid
 from litellm.litellm_core_utils.model_response_utils import (
     is_model_response_stream_empty,
-    validate_first_chat_completion_response,
 )
 from litellm.litellm_core_utils.redact_messages import LiteLLMLoggingObject
 from litellm.litellm_core_utils.thread_pool_executor import executor
@@ -40,7 +39,6 @@ from litellm.types.utils import (
 from litellm.types.utils import GenericStreamingChunk as GChunk
 from litellm.types.utils import (
     LlmProviders,
-    CallTypes,
     ModelResponse,
     ModelResponseStream,
     StreamingChoices,
@@ -48,7 +46,6 @@ from litellm.types.utils import (
 )
 
 from ..exceptions import (
-    APIResponseValidationError,
     MidStreamFallbackError,
     OpenAIError,
 )
@@ -229,59 +226,6 @@ class CustomStreamWrapper:
                 return True
 
         return False
-
-    def _get_call_type(self) -> Optional[str]:
-        call_type = getattr(self.logging_obj, "call_type", None)
-        if isinstance(call_type, str):
-            return call_type
-
-        model_call_details = getattr(self.logging_obj, "model_call_details", {})
-        if isinstance(model_call_details, dict):
-            stored_call_type = model_call_details.get("call_type")
-            if isinstance(stored_call_type, str):
-                return stored_call_type
-
-        return None
-
-    def _should_validate_final_chat_completion_response(self) -> bool:
-        return self._get_call_type() in {
-            CallTypes.completion.value,
-            CallTypes.acompletion.value,
-        }
-
-    def _get_llm_provider_for_validation(self) -> str:
-        if isinstance(self.custom_llm_provider, str) and len(self.custom_llm_provider) > 0:
-            return self.custom_llm_provider
-
-        model_call_details = getattr(self.logging_obj, "model_call_details", {})
-        if isinstance(model_call_details, dict):
-            provider = model_call_details.get("custom_llm_provider")
-            if isinstance(provider, str):
-                return provider
-
-        return ""
-
-    def _raise_mid_stream_empty_response_error(
-        self, complete_streaming_response: ModelResponse
-    ) -> None:
-        if not self._should_validate_final_chat_completion_response():
-            return
-
-        try:
-            validate_first_chat_completion_response(
-                model_response=complete_streaming_response,
-                model=self.model,
-                llm_provider=self._get_llm_provider_for_validation(),
-            )
-        except APIResponseValidationError as e:
-            raise MidStreamFallbackError(
-                message="empty completion response",
-                model=self.model,
-                llm_provider=self._get_llm_provider_for_validation() or "anthropic",
-                original_exception=e,
-                generated_content=self.response_uptil_now,
-                is_pre_first_chunk=not self.sent_first_chunk,
-            ) from e
 
     def process_chunk(self, chunk: str):
         """
@@ -1935,9 +1879,6 @@ class CustomStreamWrapper:
                         "usage",
                         getattr(complete_streaming_response, "usage"),
                     )
-                final_streaming_response = complete_streaming_response or response
-                self._raise_mid_stream_empty_response_error(final_streaming_response)
-
                 if complete_streaming_response is not None:
                     self.cache_streaming_response(
                         processed_chunk=complete_streaming_response.model_copy(
@@ -2159,9 +2100,6 @@ class CustomStreamWrapper:
                         "usage",
                         getattr(complete_streaming_response, "usage"),
                     )
-                final_streaming_response = complete_streaming_response or response
-                self._raise_mid_stream_empty_response_error(final_streaming_response)
-
                 if complete_streaming_response is not None:
                     asyncio.create_task(
                         self.async_cache_streaming_response(

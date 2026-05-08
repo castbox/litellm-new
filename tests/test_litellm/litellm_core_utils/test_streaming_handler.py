@@ -1597,9 +1597,7 @@ def test_tool_use_not_dropped_when_finish_reason_already_set(
     assert tool_calls[0].function.name == "get_weather"
 
 
-def test_sync_streaming_empty_final_response_raises_mid_stream_fallback_error():
-    from litellm.exceptions import MidStreamFallbackError
-
+def test_sync_streaming_empty_final_response_stops_without_fallback():
     finish_chunk = ModelResponseStream(
         choices=[
             StreamingChoices(
@@ -1619,13 +1617,11 @@ def test_sync_streaming_empty_final_response_raises_mid_stream_fallback_error():
     first_chunk = next(wrapper)
 
     assert first_chunk.choices[0].finish_reason == "stop"
-    with pytest.raises(MidStreamFallbackError, match="empty completion response"):
+    with pytest.raises(StopIteration):
         next(wrapper)
 
 
-def test_async_streaming_empty_final_response_raises_mid_stream_fallback_error():
-    from litellm.exceptions import MidStreamFallbackError
-
+def test_async_streaming_empty_final_response_stops_without_fallback():
     async def _run_test():
         finish_chunk = ModelResponseStream(
             choices=[
@@ -1646,7 +1642,7 @@ def test_async_streaming_empty_final_response_raises_mid_stream_fallback_error()
         first_chunk = await wrapper.__anext__()
 
         assert first_chunk.choices[0].finish_reason == "stop"
-        with pytest.raises(MidStreamFallbackError, match="empty completion response"):
+        with pytest.raises(StopAsyncIteration):
             await wrapper.__anext__()
 
     asyncio.run(_run_test())
