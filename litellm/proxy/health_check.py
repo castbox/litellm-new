@@ -13,6 +13,8 @@ import litellm
 logger = logging.getLogger(__name__)
 from litellm.constants import DEFAULT_HEALTH_CHECK_PROMPT, HEALTH_CHECK_TIMEOUT_SECONDS
 
+DEFAULT_HEALTH_CHECK_MAX_TOKENS = 32
+
 ILLEGAL_DISPLAY_PARAMS = [
     "messages",
     "api_key",
@@ -240,7 +242,7 @@ def _update_litellm_params_for_health_check(
     elif "*" not in (
         model_info.get("health_check_model") or litellm_params.get("model") or ""
     ):
-        litellm_params["max_tokens"] = 1
+        litellm_params["max_tokens"] = DEFAULT_HEALTH_CHECK_MAX_TOKENS
 
     _health_check_model = model_info.get("health_check_model", None)
     if _health_check_model is not None:
