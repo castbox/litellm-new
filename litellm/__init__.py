@@ -1676,6 +1676,9 @@ if TYPE_CHECKING:
     from .llms.perplexity.embedding.transformation import (
         PerplexityEmbeddingConfig as PerplexityEmbeddingConfig,
     )
+    from .llms.azure_openai_v1.chat.transformation import (
+        AzureOpenAIV1Config as AzureOpenAIV1Config,
+    )
     from .llms.azure_ai.chat.transformation import (
         AzureAIStudioConfig as AzureAIStudioConfig,
     )

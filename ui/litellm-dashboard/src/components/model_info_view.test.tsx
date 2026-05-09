@@ -27,6 +27,7 @@ vi.mock("./networking", () => ({
   getGuardrailsList: vi.fn(),
   tagListCall: vi.fn(),
   testConnectionRequest: vi.fn(),
+  individualModelHealthCheckCall: vi.fn(),
   modelPatchUpdateCall: vi.fn(),
   modelDeleteCall: vi.fn(),
   credentialCreateCall: vi.fn(),
@@ -52,6 +53,7 @@ const mockCredentialListCall = vi.mocked(networking.credentialListCall);
 const mockGetGuardrailsList = vi.mocked(networking.getGuardrailsList);
 const mockTagListCall = vi.mocked(networking.tagListCall);
 const mockTestConnectionRequest = vi.mocked(networking.testConnectionRequest);
+const mockIndividualModelHealthCheckCall = vi.mocked(networking.individualModelHealthCheckCall);
 const mockModelPatchUpdateCall = vi.mocked(networking.modelPatchUpdateCall);
 const mockModelDeleteCall = vi.mocked(networking.modelDeleteCall);
 const mockCredentialCreateCall = vi.mocked(networking.credentialCreateCall);
@@ -162,6 +164,12 @@ describe("ModelInfoView", () => {
     mockTestConnectionRequest.mockResolvedValue({
       status: "success",
     });
+    mockIndividualModelHealthCheckCall.mockResolvedValue({
+      healthy_count: 1,
+      unhealthy_count: 0,
+      healthy_endpoints: [{}],
+      unhealthy_endpoints: [],
+    });
 
     mockModelPatchUpdateCall.mockResolvedValue({});
     mockModelDeleteCall.mockResolvedValue({});
@@ -245,14 +253,15 @@ describe("ModelInfoView", () => {
     await user.click(testButton);
 
     await waitFor(() => {
-      expect(mockTestConnectionRequest).toHaveBeenCalled();
+      expect(mockIndividualModelHealthCheckCall).toHaveBeenCalledWith("test-token", "123");
+      expect(mockTestConnectionRequest).not.toHaveBeenCalled();
       expect(mockNotificationsManager.success).toHaveBeenCalledWith("Connection test successful!");
     });
   });
 
   it("should display error notification when connection test fails", async () => {
     const user = userEvent.setup();
-    mockTestConnectionRequest.mockRejectedValue(new Error("Connection failed"));
+    mockIndividualModelHealthCheckCall.mockRejectedValue(new Error("Connection failed"));
 
     render(<ModelInfoView {...DEFAULT_ADMIN_PROPS} />, { wrapper });
 
@@ -550,6 +559,41 @@ describe("ModelInfoView", () => {
     const updatePayload = mockModelPatchUpdateCall.mock.calls[0][1];
     expect(updatePayload.litellm_params.litellm_credential_name).toBe("selected-credential");
     expect(updatePayload.litellm_params.litellm_credential_name).not.toBe("from-json");
+  });
+
+  it("should omit empty vector_store_ids when saving model changes", async () => {
+    const user = userEvent.setup();
+    const modelWithEmptyVectorStores = {
+      ...defaultModelData,
+      litellm_params: {
+        ...defaultModelData.litellm_params,
+        vector_store_ids: [],
+      },
+    };
+
+    mockUseModelsInfo.mockReturnValue({
+      data: {
+        data: [modelWithEmptyVectorStores],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    render(<ModelInfoView {...DEFAULT_ADMIN_PROPS} />, { wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /edit settings/i })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /edit settings/i }));
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() => {
+      expect(mockModelPatchUpdateCall).toHaveBeenCalled();
+    });
+
+    const updatePayload = mockModelPatchUpdateCall.mock.calls[0][1];
+    expect(updatePayload.litellm_params).not.toHaveProperty("vector_store_ids");
   });
 
   it("should display health check model field for wildcard models", async () => {

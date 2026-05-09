@@ -3127,6 +3127,7 @@ class LlmProviders(str, Enum):
     BASETEN = "baseten"
     BLACK_FOREST_LABS = "black_forest_labs"
     AZURE = "azure"
+    AZURE_OPENAI_V1 = "azure_openai_v1"
     AZURE_TEXT = "azure_text"
     AZURE_AI = "azure_ai"
     SAGEMAKER = "sagemaker"

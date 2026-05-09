@@ -56,6 +56,51 @@ describe("prepareModelAddRequest", () => {
     expect(deployment.litellmParamsObj.custom_llm_provider).toBe("petals");
   });
 
+  it("maps Azure OpenAI v1 to the dedicated LiteLLM provider", async () => {
+    const formValues = {
+      model_mappings: [
+        {
+          public_name: "Azure GPT 5.2",
+          litellm_model: "gpt-5.2",
+        },
+      ],
+      model_name: "gpt-5.2",
+      custom_llm_provider: "Azure_OpenAI_v1",
+      api_base: "https://litellm-castbox-resource.services.ai.azure.com/openai/v1",
+      api_key: "azure-key",
+    };
+
+    const deployments = await prepareModelAddRequest({ ...formValues }, "token", null);
+
+    expect(deployments).toHaveLength(1);
+    const [deployment] = deployments!;
+    expect(deployment.litellmParamsObj.model).toBe("gpt-5.2");
+    expect(deployment.litellmParamsObj.custom_llm_provider).toBe("azure_openai_v1");
+    expect(deployment.litellmParamsObj.api_base).toBe(
+      "https://litellm-castbox-resource.services.ai.azure.com/openai/v1",
+    );
+  });
+
+  it("omits empty vector_store_ids from LiteLLM params", async () => {
+    const formValues = {
+      model_mappings: [
+        {
+          public_name: "Azure GPT 5.2",
+          litellm_model: "gpt-5.2",
+        },
+      ],
+      model_name: "gpt-5.2",
+      custom_llm_provider: "Azure_OpenAI_v1",
+      vector_store_ids: [],
+    };
+
+    const deployments = await prepareModelAddRequest({ ...formValues }, "token", null);
+
+    expect(deployments).toHaveLength(1);
+    const [deployment] = deployments!;
+    expect(deployment.litellmParamsObj).not.toHaveProperty("vector_store_ids");
+  });
+
   it("ignores litellm_credential_name inside LiteLLM Params JSON", async () => {
     const formValues = {
       model_mappings: [

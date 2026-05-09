@@ -775,6 +775,34 @@
     "default_model_placeholder": "azure/my-deployment"
   },
   {
+    "provider": "Azure_OpenAI_v1",
+    "provider_display_name": "Azure OpenAI v1",
+    "litellm_provider": "azure_openai_v1",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": "https://your-resource.services.ai.azure.com/openai/v1",
+        "tooltip": "Enter the Azure OpenAI v1 base URL used by the OpenAI SDK.",
+        "required": true,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "Azure API Key",
+        "placeholder": "Enter your Azure API Key",
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-5.2"
+  },
+  {
     "provider": "Azure_AI_Studio",
     "provider_display_name": "Azure AI Foundry (Studio)",
     "litellm_provider": "azure_ai",

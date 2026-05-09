@@ -12,6 +12,7 @@ export enum Providers {
   BedrockMantle = "Amazon Bedrock Mantle",
   SageMaker = "AWS SageMaker",
   Azure = "Azure",
+  Azure_OpenAI_v1 = "Azure OpenAI v1",
   Azure_AI_Studio = "Azure AI Foundry (Studio)",
   AZURE_TEXT = "Azure Text",
   BASETEN = "Baseten",
@@ -131,6 +132,7 @@ export const provider_map: Record<string, string> = {
   AssemblyAI: "assemblyai",
   AUTO_ROUTER: "auto_router",
   Azure: "azure",
+  Azure_OpenAI_v1: "azure_openai_v1",
   Azure_AI_Studio: "azure_ai",
   AZURE_TEXT: "azure_text",
   BASETEN: "baseten",
@@ -254,6 +256,7 @@ export const providerLogoMap: Record<string, string> = {
   [Providers.ANTHROPIC_TEXT]: `${asset_logos_folder}anthropic.svg`,
   [Providers.AssemblyAI]: `${asset_logos_folder}assemblyai_small.png`,
   [Providers.Azure]: `${asset_logos_folder}microsoft_azure.svg`,
+  [Providers.Azure_OpenAI_v1]: `${asset_logos_folder}microsoft_azure.svg`,
   [Providers.Azure_AI_Studio]: `${asset_logos_folder}microsoft_azure.svg`,
   [Providers.AZURE_TEXT]: `${asset_logos_folder}microsoft_azure.svg`,
   [Providers.BASETEN]: `${asset_logos_folder}baseten.svg`,
@@ -389,6 +392,8 @@ export const getPlaceholder = (selectedProvider: string): string => {
     return "gemini-pro";
   } else if (selectedProvider == Providers.Azure_AI_Studio) {
     return "azure_ai/command-r-plus";
+  } else if (selectedProvider == Providers.Azure_OpenAI_v1) {
+    return "gpt-5.2";
   } else if (selectedProvider == Providers.Azure) {
     return "my-deployment";
   } else if (selectedProvider == Providers.Oracle) {

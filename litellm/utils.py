@@ -7948,6 +7948,10 @@ class ProviderConfigManager:
                 lambda model: ProviderConfigManager._get_azure_config(model),
                 True,
             ),
+            LlmProviders.AZURE_OPENAI_V1: (
+                lambda: litellm.AzureOpenAIV1Config(),
+                False,
+            ),
             LlmProviders.AZURE_AI: (
                 lambda model: ProviderConfigManager._get_azure_ai_config(model),
                 True,

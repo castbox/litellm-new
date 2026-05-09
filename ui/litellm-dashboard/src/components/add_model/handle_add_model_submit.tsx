@@ -54,6 +54,9 @@ export const prepareModelAddRequest = async (formValues: Record<string, any>, ac
         if (value === "") {
           continue;
         }
+        if (key === "vector_store_ids" && Array.isArray(value) && value.length === 0) {
+          continue;
+        }
         // Skip the custom_pricing and pricing_model fields as they're only used for UI control
         if (key === "custom_pricing" || key === "pricing_model" || key === "cache_control") {
           continue;

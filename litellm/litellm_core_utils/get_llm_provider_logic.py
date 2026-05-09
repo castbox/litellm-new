@@ -790,6 +790,13 @@ def _get_openai_compatible_provider_info(  # noqa: PLR0915
         ) = litellm.AzureAIStudioConfig()._get_openai_compatible_provider_info(
             model, api_base, api_key, custom_llm_provider
         )
+    elif custom_llm_provider == "azure_openai_v1":
+        (
+            api_base,
+            dynamic_api_key,
+        ) = litellm.AzureOpenAIV1Config()._get_openai_compatible_provider_info(
+            api_base, api_key
+        )
     elif custom_llm_provider == "github":
         api_base = (
             api_base

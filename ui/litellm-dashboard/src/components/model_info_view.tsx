@@ -33,11 +33,11 @@ import {
   credentialGetCall,
   credentialListCall,
   getGuardrailsList,
+  individualModelHealthCheckCall,
   modelDeleteCall,
   modelInfoV1Call,
   modelPatchUpdateCall,
   tagListCall,
-  testConnectionRequest,
 } from "./networking";
 import { getProviderLogoAndName } from "./provider_info_helpers";
 import NumericalInput from "./shared/numerical_input";
@@ -266,9 +266,11 @@ export default function ModelInfoView({
         updatedLitellmParams.guardrails = values.guardrails;
       }
       if (values.vector_store_ids !== undefined) {
-        updatedLitellmParams.vector_store_ids = Array.isArray(values.vector_store_ids)
-          ? values.vector_store_ids
-          : [];
+        if (Array.isArray(values.vector_store_ids) && values.vector_store_ids.length > 0) {
+          updatedLitellmParams.vector_store_ids = values.vector_store_ids;
+        } else {
+          delete updatedLitellmParams.vector_store_ids;
+        }
       }
 
       // Handle cache control settings
@@ -362,23 +364,14 @@ export default function ModelInfoView({
     if (!accessToken) return;
     try {
       NotificationsManager.info("Testing connection...");
-      const response = await testConnectionRequest(
-        accessToken,
-        {
-          custom_llm_provider: localModelData.litellm_params.custom_llm_provider,
-          litellm_credential_name: localModelData.litellm_params.litellm_credential_name,
-          model: localModelData.litellm_model_name,
-        },
-        {
-          mode: localModelData.model_info?.mode,
-        },
-        localModelData.model_info?.mode,
-      );
+      const response = await individualModelHealthCheckCall(accessToken, modelId);
 
-      if (response.status === "success") {
+      if (response.healthy_count > 0 && response.unhealthy_count === 0) {
         NotificationsManager.success("Connection test successful!");
       } else {
-        throw new Error(response?.result?.error || response?.message || "Unknown error");
+        const errorMessage =
+          response?.unhealthy_endpoints?.[0]?.error || response?.message || "Unknown error";
+        throw new Error(errorMessage);
       }
     } catch (error) {
       if (error instanceof Error) {
