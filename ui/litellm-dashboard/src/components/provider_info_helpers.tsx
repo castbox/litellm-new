@@ -117,6 +117,7 @@ export enum Providers {
   FunCloudClaude = "FunCloud Claude",
   ComflyChat = "ComflyChat",
   ApiMart = "ApiMart",
+  ApiGo = "ApiGo",
   XINFERENCE = "Xinference",
   ToAPIs = "ToAPIs",
 }
@@ -240,6 +241,7 @@ export const provider_map: Record<string, string> = {
   FunCloudClaude: "funcloud_claude",
   ComflyChat: "comflychat",
   ApiMart: "apimart",
+  ApiGo: "apigo",
   XINFERENCE: "xinference",
   ToAPIs: "toapis",
 };
@@ -345,6 +347,7 @@ export const providerLogoMap: Record<string, string> = {
   [Providers.FunCloudClaude]: `${asset_logos_folder}funcloud.png`,
   [Providers.ComflyChat]: `${asset_logos_folder}comflychat.png`,
   [Providers.ApiMart]: `${asset_logos_folder}apimart.png`,
+  [Providers.ApiGo]: `${asset_logos_folder}openai_small.svg`,
   [Providers.XINFERENCE]: `${asset_logos_folder}xinference.svg`,
   [Providers.ToAPIs]: `${asset_logos_folder}toapis.png`,
 };

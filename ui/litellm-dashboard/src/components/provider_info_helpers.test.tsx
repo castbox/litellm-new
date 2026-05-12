@@ -74,6 +74,12 @@ describe("provider_info_helpers", () => {
       expect(result.logo).toBe(providerLogoMap[Providers.ToAPIs]);
     });
 
+    it("should map apigo provider value to ApiGo display name and logo", () => {
+      const result = getProviderLogoAndName("apigo");
+      expect(result.displayName).toBe(Providers.ApiGo);
+      expect(result.logo).toBe(providerLogoMap[Providers.ApiGo]);
+    });
+
     it("should map azure provider value to Azure display name and logo", () => {
       const result = getProviderLogoAndName("azure");
       expect(result.displayName).toBe(Providers.Azure);
