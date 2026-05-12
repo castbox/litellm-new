@@ -177,6 +177,24 @@
         "interactions": true
       }
     },
+    "apigo": {
+      "display_name": "ApiGo (`apigo`)",
+      "url": "https://docs.litellm.ai/docs/providers/apigo",
+      "endpoints": {
+        "chat_completions": true,
+        "messages": false,
+        "responses": true,
+        "embeddings": false,
+        "image_generations": false,
+        "audio_transcriptions": false,
+        "audio_speech": false,
+        "moderations": false,
+        "batches": false,
+        "rerank": false,
+        "a2a": true,
+        "interactions": true
+      }
+    },
     "apertis": {
       "display_name": "Apertis (`apertis`)",
       "endpoints": {

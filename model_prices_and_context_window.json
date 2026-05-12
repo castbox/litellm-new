@@ -1625,6 +1625,22 @@
         "supports_vision": true,
         "tool_use_system_prompt_tokens": 159
     },
+    "apigo/gpt-4o": {
+        "input_cost_per_token": 0.0,
+        "litellm_provider": "apigo",
+        "max_input_tokens": 128000,
+        "max_output_tokens": 16384,
+        "max_tokens": 16384,
+        "mode": "chat",
+        "output_cost_per_token": 0.0,
+        "source": "https://vip.apigo.ai/doc",
+        "supports_function_calling": true,
+        "supports_parallel_function_calling": true,
+        "supports_response_schema": true,
+        "supports_system_messages": true,
+        "supports_tool_choice": true,
+        "supports_vision": true
+    },
     "assemblyai/best": {
         "input_cost_per_second": 3.333e-05,
         "litellm_provider": "assemblyai",
