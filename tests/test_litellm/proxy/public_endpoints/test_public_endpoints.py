@@ -62,6 +62,26 @@ def test_get_provider_create_fields():
     assert has_detailed_fields, "Expected at least one provider to have detailed credential fields"
 
 
+def test_get_provider_create_fields_includes_apigo():
+    app_instance = FastAPI()
+    app_instance.include_router(router)
+    client = TestClient(app_instance)
+
+    response = client.get("/public/providers/fields")
+
+    assert response.status_code == 200
+    providers = response.json()
+    apigo = next((p for p in providers if p["litellm_provider"] == "apigo"), None)
+    assert apigo is not None
+    assert apigo["provider"] == "ApiGo"
+    assert apigo["provider_display_name"] == "ApiGo"
+    assert apigo["default_model_placeholder"] == "gpt-4o"
+
+    field_by_key = {field["key"]: field for field in apigo["credential_fields"]}
+    assert field_by_key["api_base"]["default_value"] == "https://vip.apigo.ai/v1"
+    assert field_by_key["api_key"]["required"] is True
+
+
 def test_get_litellm_model_cost_map_returns_cost_map():
     app = FastAPI()
     app.include_router(router)

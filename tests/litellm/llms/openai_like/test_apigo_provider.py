@@ -2,8 +2,10 @@
 Unit tests for the ApiGo OpenAI-compatible provider.
 """
 
+import json
 import os
 import sys
+from pathlib import Path
 
 sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.."))
@@ -17,6 +19,7 @@ from litellm.llms.openai_like.json_loader import JSONProviderRegistry
 from litellm.types.router import GenericLiteLLMParams
 
 APIGO_BASE_URL = "https://vip.apigo.ai/v1"
+REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
 def _get_config():
@@ -101,3 +104,20 @@ def test_apigo_provider_config_manager():
 
     assert config is not None
     assert config.custom_llm_provider == "apigo"
+
+
+def test_apigo_dashboard_provider_fields_present():
+    provider_fields_path = (
+        REPO_ROOT / "litellm" / "proxy" / "public_endpoints" / "provider_create_fields.json"
+    )
+    provider_fields = json.loads(provider_fields_path.read_text())
+    apigo = next((p for p in provider_fields if p["litellm_provider"] == "apigo"), None)
+
+    assert apigo is not None
+    assert apigo["provider"] == "ApiGo"
+    assert apigo["provider_display_name"] == "ApiGo"
+    assert apigo["default_model_placeholder"] == "gpt-4o"
+
+    field_by_key = {field["key"]: field for field in apigo["credential_fields"]}
+    assert field_by_key["api_base"]["default_value"] == APIGO_BASE_URL
+    assert field_by_key["api_key"]["required"] is True
