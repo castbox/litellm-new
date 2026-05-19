@@ -346,18 +346,41 @@ def _summarise_usage_data(data: Dict[str, Any]) -> str:
     )
 
     models = _accumulate_breakdown(
-        results, "models", ["spend", "api_requests", "total_tokens"]
+        results,
+        "models",
+        [
+            "spend",
+            "api_requests",
+            "successful_requests",
+            "failed_requests",
+            "total_tokens",
+        ],
     )
-    providers = _accumulate_breakdown(results, "providers", ["spend", "api_requests"])
+    providers = _accumulate_breakdown(
+        results,
+        "providers",
+        ["spend", "api_requests", "successful_requests", "failed_requests"],
+    )
 
     model_lines = _ranked_lines(
         models,
-        lambda n, d: f"  - {n}: ${d['spend']:.4f} ({int(d['api_requests'])} reqs, {int(d['total_tokens'])} tokens)",
+        lambda n, d: (
+            f"  - {n}: ${d['spend']:.4f} "
+            f"({int(d['api_requests'])} reqs, "
+            f"{int(d['successful_requests'])} successful, "
+            f"{int(d['failed_requests'])} failed, "
+            f"{int(d['total_tokens'])} tokens)"
+        ),
         TOP_N_MODELS,
     )
     provider_lines = _ranked_lines(
         providers,
-        lambda n, d: f"  - {n}: ${d['spend']:.4f} ({int(d['api_requests'])} reqs)",
+        lambda n, d: (
+            f"  - {n}: ${d['spend']:.4f} "
+            f"({int(d['api_requests'])} reqs, "
+            f"{int(d['successful_requests'])} successful, "
+            f"{int(d['failed_requests'])} failed)"
+        ),
         TOP_N_PROVIDERS,
     )
 

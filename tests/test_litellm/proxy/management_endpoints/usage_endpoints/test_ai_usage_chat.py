@@ -39,6 +39,8 @@ SAMPLE_AGGREGATED_RESPONSE = {
                         "metrics": {
                             "spend": 40.0,
                             "api_requests": 300,
+                            "successful_requests": 280,
+                            "failed_requests": 20,
                             "total_tokens": 25000,
                         },
                         "metadata": {},
@@ -47,7 +49,12 @@ SAMPLE_AGGREGATED_RESPONSE = {
                 },
                 "providers": {
                     "openai": {
-                        "metrics": {"spend": 50.25, "api_requests": 500},
+                        "metrics": {
+                            "spend": 50.25,
+                            "api_requests": 500,
+                            "successful_requests": 480,
+                            "failed_requests": 20,
+                        },
                         "metadata": {},
                         "api_key_breakdown": {},
                     },
@@ -155,6 +162,20 @@ class TestSummariseUsageData:
     def test_summarise_includes_providers(self):
         summary = _summarise_usage_data(SAMPLE_AGGREGATED_RESPONSE)
         assert "openai" in summary
+
+    def test_summarise_includes_model_success_and_failure_counts(self):
+        summary = _summarise_usage_data(SAMPLE_AGGREGATED_RESPONSE)
+        assert "gpt-4" in summary
+        assert "300 reqs" in summary
+        assert "280 successful" in summary
+        assert "20 failed" in summary
+
+    def test_summarise_includes_provider_success_and_failure_counts(self):
+        summary = _summarise_usage_data(SAMPLE_AGGREGATED_RESPONSE)
+        assert "openai" in summary
+        assert "500 reqs" in summary
+        assert "480 successful" in summary
+        assert "20 failed" in summary
 
     def test_summarise_handles_empty_data(self):
         empty = {"results": [], "metadata": {}}
