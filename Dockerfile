@@ -39,6 +39,12 @@ RUN pip install dist/*.whl
 # install dependencies as wheels
 RUN pip wheel --no-cache-dir --wheel-dir=/wheels/ -r requirements.txt
 
+# Build local proxy extras so bundled Prisma schema/migrations match this image.
+# This intentionally replaces the PyPI wheel collected from requirements.txt.
+RUN cd litellm-proxy-extras && rm -rf dist/* && python -m build && \
+    rm -f /wheels/litellm_proxy_extras-*.whl && \
+    cp dist/*.whl /wheels/
+
 # ensure pyjwt is used, not jwt
 RUN pip uninstall jwt -y
 RUN pip uninstall PyJWT -y

@@ -4,6 +4,10 @@ version = "0.4.56"
 description = "Additional files for the LiteLLM Proxy. Reduces the size of the main litellm package."
 authors = ["BerriAI"]
 readme = "README.md"
+include = [
+    "litellm_proxy_extras/schema.prisma",
+    "litellm_proxy_extras/migrations/**/*",
+]
 
 
 [tool.poetry.urls]
