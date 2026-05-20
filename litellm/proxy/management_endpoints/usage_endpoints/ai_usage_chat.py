@@ -35,6 +35,13 @@ MAX_CHAT_MESSAGES = 20
 TOP_N_MODELS = 15
 TOP_N_PROVIDERS = 10
 TOP_N_KEYS = 10
+USAGE_BREAKDOWN_FIELDS = [
+    "spend",
+    "api_requests",
+    "successful_requests",
+    "failed_requests",
+    "total_tokens",
+]
 
 # ---------------------------------------------------------------------------
 # Types
@@ -174,6 +181,8 @@ _SYSTEM_PROMPT_BASE = (
     "- Be concise and specific. Use exact numbers from the data.\n"
     "- Format costs as dollar amounts (e.g. $12.34).\n"
     "- When comparing entities, show a ranked list.\n"
+    "- Treat `model_groups` as public model names and `models` as LiteLLM deployment model names.\n"
+    "- Do not attribute provider totals to a specific model unless the fetched data explicitly supports that scope.\n"
     "- If data is empty or no results found, say so clearly.\n"
     "- Do not hallucinate data — only use what the tools return.\n"
     "- Today's date will be provided below. Use it to interpret relative dates "
@@ -323,14 +332,27 @@ def _ranked_lines(
     totals: Dict[str, Dict[str, float]],
     fmt: Callable[[str, Dict[str, float]], str],
     limit: int,
+    sort_field: str = "spend",
 ) -> List[str]:
-    """Sort by spend descending, format each entry, and truncate."""
+    """Sort by a metric descending, format each entry, and truncate."""
     return [
         fmt(name, vals)
-        for name, vals in sorted(totals.items(), key=lambda x: -x[1].get("spend", 0))[
+        for name, vals in sorted(
+            totals.items(), key=lambda x: -x[1].get(sort_field, 0)
+        )[
             :limit
         ]
     ]
+
+
+def _format_usage_counts(name: str, data: Dict[str, float]) -> str:
+    return (
+        f"  - {name}: ${data['spend']:.4f} "
+        f"({int(data['api_requests'])} reqs, "
+        f"{int(data['successful_requests'])} successful, "
+        f"{int(data['failed_requests'])} failed, "
+        f"{int(data['total_tokens'])} tokens)"
+    )
 
 
 def _summarise_usage_data(data: Dict[str, Any]) -> str:
@@ -345,47 +367,48 @@ def _summarise_usage_data(data: Dict[str, Any]) -> str:
         f"Total Tokens: {meta.get('total_tokens', 0)}"
     )
 
-    models = _accumulate_breakdown(
-        results,
-        "models",
-        [
-            "spend",
-            "api_requests",
-            "successful_requests",
-            "failed_requests",
-            "total_tokens",
-        ],
+    models = _accumulate_breakdown(results, "models", USAGE_BREAKDOWN_FIELDS)
+    model_groups = _accumulate_breakdown(
+        results, "model_groups", USAGE_BREAKDOWN_FIELDS
     )
     providers = _accumulate_breakdown(
         results,
         "providers",
-        ["spend", "api_requests", "successful_requests", "failed_requests"],
+        USAGE_BREAKDOWN_FIELDS,
     )
 
     model_lines = _ranked_lines(
         models,
-        lambda n, d: (
-            f"  - {n}: ${d['spend']:.4f} "
-            f"({int(d['api_requests'])} reqs, "
-            f"{int(d['successful_requests'])} successful, "
-            f"{int(d['failed_requests'])} failed, "
-            f"{int(d['total_tokens'])} tokens)"
-        ),
+        _format_usage_counts,
         TOP_N_MODELS,
+    )
+    model_group_lines = _ranked_lines(
+        model_groups,
+        _format_usage_counts,
+        TOP_N_MODELS,
+    )
+    failed_model_group_lines = _ranked_lines(
+        {k: v for k, v in model_groups.items() if v.get("failed_requests", 0) > 0},
+        _format_usage_counts,
+        TOP_N_MODELS,
+        sort_field="failed_requests",
     )
     provider_lines = _ranked_lines(
         providers,
-        lambda n, d: (
-            f"  - {n}: ${d['spend']:.4f} "
-            f"({int(d['api_requests'])} reqs, "
-            f"{int(d['successful_requests'])} successful, "
-            f"{int(d['failed_requests'])} failed)"
-        ),
+        _format_usage_counts,
         TOP_N_PROVIDERS,
     )
 
     sections = [header, ""]
-    sections += ["Top Models by Spend:"] + (model_lines or ["  (no data)"]) + [""]
+    sections += ["Top Public Model Names by Spend:"] + (
+        model_group_lines or ["  (no data)"]
+    ) + [""]
+    sections += ["Top LiteLLM Models by Spend:"] + (model_lines or ["  (no data)"]) + [
+        ""
+    ]
+    sections += ["Top Public Model Names by Failed Requests:"] + (
+        failed_model_group_lines or ["  (no data)"]
+    ) + [""]
     sections += ["Top Providers by Spend:"] + (provider_lines or ["  (no data)"])
     return "\n".join(sections)
 

@@ -239,6 +239,66 @@ async def test_update_daily_spend_sorting():
 
 
 @pytest.mark.asyncio
+async def test_update_daily_spend_uses_model_group_in_unique_key_when_available():
+    """
+    Daily spend rows must be keyed by model_group as well as provider model.
+
+    A single deployment model can back multiple public model names. If model_group is
+    not part of the upsert key, usage for those public models is merged into one row
+    and the model_group breakdown becomes incorrect.
+    """
+    mock_prisma_client = MagicMock()
+    mock_batcher = MagicMock()
+    mock_table = MagicMock()
+    mock_prisma_client.db.batch_.return_value.__aenter__.return_value = mock_batcher
+    mock_batcher.litellm_dailyuserspend = mock_table
+
+    daily_spend_transactions = {
+        "test_key": {
+            "user_id": "test-user",
+            "date": "2026-05-19",
+            "api_key": "test-api-key",
+            "model": "google/gemini-2.5-flash-lite",
+            "model_group": "ai-seek-pdf-parse",
+            "custom_llm_provider": "openrouter",
+            "mcp_namespaced_tool_name": "",
+            "endpoint": "/chat/completions",
+            "prompt_tokens": 1080,
+            "completion_tokens": 822,
+            "spend": 0.0004368,
+            "api_requests": 1,
+            "successful_requests": 1,
+            "failed_requests": 0,
+        }
+    }
+
+    await DBSpendUpdateWriter._update_daily_spend(
+        n_retry_times=1,
+        prisma_client=mock_prisma_client,
+        proxy_logging_obj=MagicMock(),
+        daily_spend_transactions=daily_spend_transactions,
+        entity_type="user",
+        entity_id_field="user_id",
+        table_name="litellm_dailyuserspend",
+        unique_constraint_name="user_id_date_api_key_model_model_group_custom_llm_provider_mcp_namespaced_tool_name_endpoint",
+    )
+
+    mock_table.upsert.assert_called_once()
+    call_args = mock_table.upsert.call_args[1]
+    where_clause = call_args["where"][
+        "user_id_date_api_key_model_model_group_custom_llm_provider_mcp_namespaced_tool_name_endpoint"
+    ]
+    assert where_clause["model"] == "google/gemini-2.5-flash-lite"
+    assert where_clause["model_group"] == "ai-seek-pdf-parse"
+
+    create_data = call_args["data"]["create"]
+    assert create_data["model_group"] == "ai-seek-pdf-parse"
+
+    update_data = call_args["data"]["update"]
+    assert update_data["model_group"] == "ai-seek-pdf-parse"
+
+
+@pytest.mark.asyncio
 async def test_update_daily_spend_tag_with_request_id():
     """
     Test that request_id is included in update_data when updating tag transactions.

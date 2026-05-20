@@ -148,6 +148,11 @@ class TestToolSchemas:
         prompt = _build_system_prompt(is_admin=True)
         assert date.today().isoformat() in prompt
 
+    def test_system_prompt_explains_model_group_scope(self):
+        prompt = _build_system_prompt(is_admin=True)
+        assert "model_groups" in prompt
+        assert "public model names" in prompt
+
 
 class TestSummariseUsageData:
     def test_summarise_includes_totals(self):
@@ -176,6 +181,90 @@ class TestSummariseUsageData:
         assert "500 reqs" in summary
         assert "480 successful" in summary
         assert "20 failed" in summary
+
+    def test_summarise_includes_public_model_group_counts(self):
+        data = {
+            "results": [
+                {
+                    "breakdown": {
+                        "models": {
+                            "deployment-a": {
+                                "metrics": {
+                                    "spend": 1.0,
+                                    "api_requests": 100,
+                                    "successful_requests": 4,
+                                    "failed_requests": 96,
+                                    "total_tokens": 1000,
+                                },
+                                "metadata": {},
+                                "api_key_breakdown": {},
+                            },
+                        },
+                        "model_groups": {
+                            "ai-seek-pdf-parse": {
+                                "metrics": {
+                                    "spend": 50.0,
+                                    "api_requests": 2000,
+                                    "successful_requests": 1904,
+                                    "failed_requests": 96,
+                                    "total_tokens": 200000,
+                                },
+                                "metadata": {},
+                                "api_key_breakdown": {},
+                            },
+                        },
+                        "providers": {},
+                        "api_keys": {},
+                        "mcp_servers": {},
+                        "entities": {},
+                    }
+                }
+            ],
+            "metadata": {},
+        }
+
+        summary = _summarise_usage_data(data)
+
+        assert "Top Public Model Names by Spend" in summary
+        assert "ai-seek-pdf-parse" in summary
+        assert "2000 reqs" in summary
+        assert "1904 successful" in summary
+        assert "96 failed" in summary
+
+    def test_summarise_includes_public_model_groups_by_failures(self):
+        data = {
+            "results": [
+                {
+                    "breakdown": {
+                        "models": {},
+                        "model_groups": {
+                            "low-spend-error-model": {
+                                "metrics": {
+                                    "spend": 0.0,
+                                    "api_requests": 100,
+                                    "successful_requests": 4,
+                                    "failed_requests": 96,
+                                    "total_tokens": 0,
+                                },
+                                "metadata": {},
+                                "api_key_breakdown": {},
+                            },
+                        },
+                        "providers": {},
+                        "api_keys": {},
+                        "mcp_servers": {},
+                        "entities": {},
+                    }
+                }
+            ],
+            "metadata": {},
+        }
+
+        summary = _summarise_usage_data(data)
+
+        assert "Top Public Model Names by Failed Requests" in summary
+        assert "low-spend-error-model" in summary
+        assert "96 failed" in summary
 
     def test_summarise_handles_empty_data(self):
         empty = {"results": [], "metadata": {}}
