@@ -122,6 +122,8 @@ class HealthCheckHelpers:
             "audio_transcription",
             "image_generation",
             "video_generation",
+            "moderation",
+            "moderations",
             "rerank",
             "realtime",
             "batch",
@@ -187,6 +189,14 @@ class HealthCheckHelpers:
             "video_generation": lambda: litellm.avideo_generation(
                 **_filter_model_params(model_params=model_params),
                 prompt=prompt or "test video generation",
+            ),
+            "moderation": lambda: litellm.amoderation(
+                **_filter_model_params(model_params=model_params),
+                input=prompt or "test",
+            ),
+            "moderations": lambda: litellm.amoderation(
+                **_filter_model_params(model_params=model_params),
+                input=prompt or "test",
             ),
             "rerank": lambda: litellm.arerank(
                 **_filter_model_params(model_params=model_params),

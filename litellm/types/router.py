@@ -504,6 +504,7 @@ class ModelGroupInfo(BaseModel):
                 "image_generation",
                 "audio_transcription",
                 "rerank",
+                "moderation",
                 "moderations",
             ],
         ]

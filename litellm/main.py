@@ -7292,6 +7292,8 @@ async def ahealth_check(
             "audio_transcription",
             "image_generation",
             "video_generation",
+            "moderation",
+            "moderations",
             "batch",
             "rerank",
             "realtime",

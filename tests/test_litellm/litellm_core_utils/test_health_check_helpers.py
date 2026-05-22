@@ -83,6 +83,25 @@ def test_get_litellm_internal_health_check_user_api_key_auth():
 
 
 @pytest.mark.asyncio
+async def test_should_include_moderation_mode_handler_for_health_checks():
+    model_params = {"model": "omni-moderation-latest", "api_key": "test-key"}
+
+    with patch("litellm.amoderation", new_callable=AsyncMock) as mock_amoderation:
+        mock_amoderation.return_value = MagicMock(_hidden_params={"headers": {}})
+        mode_handlers = HealthCheckHelpers.get_mode_handlers(
+            model="omni-moderation-latest",
+            custom_llm_provider="openai",
+            model_params=model_params,
+            prompt="test moderation input",
+        )
+
+        await mode_handlers["moderation"]()
+
+    mock_amoderation.assert_awaited_once()
+    assert mock_amoderation.call_args.kwargs["input"] == "test moderation input"
+
+
+@pytest.mark.asyncio
 async def test_ahealth_check_failure_masks_raw_request_headers():
     """
     Security test: Verify that when ahealth_check() fails, the raw_request_headers

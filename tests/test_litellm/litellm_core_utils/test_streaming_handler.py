@@ -14,6 +14,7 @@ import traceback
 from typing import Optional
 
 import litellm
+from litellm.exceptions import MidStreamFallbackError
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.litellm_core_utils.streaming_handler import (
     AUDIO_ATTRIBUTE,
@@ -77,6 +78,23 @@ def _build_stream_logging_obj(call_type: str = "completion") -> Logging:
     logging.failure_handler = MagicMock()
     logging.async_failure_handler = AsyncMock()
     return logging
+
+
+def _empty_usage_stream_chunk() -> ModelResponseStream:
+    return ModelResponseStream(
+        id="chatcmpl-empty",
+        object="chat.completion.chunk",
+        created=1000000,
+        model="cometapi/gemini-3.1-pro-preview",
+        choices=[
+            StreamingChoices(
+                index=0,
+                delta=Delta(role="assistant", content=""),
+                finish_reason=None,
+            )
+        ],
+        usage=Usage(prompt_tokens=10, completion_tokens=0, total_tokens=10),
+    )
 
 
 class AsyncModelResponseIterator:
@@ -1597,7 +1615,7 @@ def test_tool_use_not_dropped_when_finish_reason_already_set(
     assert tool_calls[0].function.name == "get_weather"
 
 
-def test_sync_streaming_empty_final_response_stops_without_fallback():
+def test_sync_streaming_empty_final_response_raises_midstream_fallback_error():
     finish_chunk = ModelResponseStream(
         choices=[
             StreamingChoices(
@@ -1614,14 +1632,11 @@ def test_sync_streaming_empty_final_response_stops_without_fallback():
         logging_obj=_build_stream_logging_obj(),
     )
 
-    first_chunk = next(wrapper)
-
-    assert first_chunk.choices[0].finish_reason == "stop"
-    with pytest.raises(StopIteration):
+    with pytest.raises(MidStreamFallbackError, match="empty completion response"):
         next(wrapper)
 
 
-def test_async_streaming_empty_final_response_stops_without_fallback():
+def test_async_streaming_empty_final_response_raises_midstream_fallback_error():
     async def _run_test():
         finish_chunk = ModelResponseStream(
             choices=[
@@ -1639,10 +1654,7 @@ def test_async_streaming_empty_final_response_stops_without_fallback():
             logging_obj=_build_stream_logging_obj(),
         )
 
-        first_chunk = await wrapper.__anext__()
-
-        assert first_chunk.choices[0].finish_reason == "stop"
-        with pytest.raises(StopAsyncIteration):
+        with pytest.raises(MidStreamFallbackError, match="empty completion response"):
             await wrapper.__anext__()
 
     asyncio.run(_run_test())
@@ -1715,5 +1727,51 @@ def test_async_streaming_empty_final_response_skips_validation_for_responses():
         assert first_chunk.choices[0].finish_reason == "stop"
         with pytest.raises(StopAsyncIteration):
             await wrapper.__anext__()
+
+    asyncio.run(_run_test())
+
+
+def test_streaming_empty_success_response_raises_midstream_fallback_error():
+    logging_obj = _build_stream_logging_obj()
+    wrapper = CustomStreamWrapper(
+        completion_stream=ModelResponseListIterator(
+            model_responses=[_empty_usage_stream_chunk()]
+        ),
+        model="cometapi/gemini-3.1-pro-preview",
+        logging_obj=logging_obj,
+        custom_llm_provider="openai",
+    )
+
+    with pytest.raises(MidStreamFallbackError, match="empty completion response") as exc:
+        next(wrapper)
+
+    assert exc.value.generated_content == ""
+    assert exc.value.is_pre_first_chunk is True
+    logging_obj.success_handler.assert_not_called()
+    logging_obj.failure_handler.assert_called_once()
+
+
+def test_async_streaming_empty_success_response_raises_midstream_fallback_error():
+    async def _run_test():
+        logging_obj = _build_stream_logging_obj()
+        wrapper = CustomStreamWrapper(
+            completion_stream=AsyncModelResponseIterator([_empty_usage_stream_chunk()]),
+            model="cometapi/gemini-3.1-pro-preview",
+            logging_obj=logging_obj,
+            custom_llm_provider="openai",
+        )
+
+        with pytest.raises(
+            MidStreamFallbackError, match="empty completion response"
+        ) as exc:
+            await wrapper.__anext__()
+
+        assert exc.value.generated_content == ""
+        assert exc.value.is_pre_first_chunk is True
+        await asyncio.sleep(0)
+        logging_obj.success_handler.assert_not_called()
+        logging_obj.async_success_handler.assert_not_called()
+        logging_obj.failure_handler.assert_called_once()
+        logging_obj.async_failure_handler.assert_awaited_once()
 
     asyncio.run(_run_test())

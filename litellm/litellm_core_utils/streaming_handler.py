@@ -1,5 +1,6 @@
 import asyncio
 import collections.abc
+import copy
 import datetime
 import json
 import logging
@@ -28,6 +29,7 @@ from litellm import verbose_logger
 from litellm._uuid import uuid
 from litellm.litellm_core_utils.model_response_utils import (
     is_model_response_stream_empty,
+    validate_first_chat_completion_response,
 )
 from litellm.litellm_core_utils.redact_messages import LiteLLMLoggingObject
 from litellm.litellm_core_utils.thread_pool_executor import executor
@@ -166,6 +168,45 @@ class CustomStreamWrapper:
         self.is_function_call = self.check_is_function_call(logging_obj=logging_obj)
         self.created: Optional[int] = None
         self._last_returned_hidden_params: Optional[dict] = None
+
+    def _should_validate_complete_streaming_response(self) -> bool:
+        call_type = getattr(self.logging_obj, "call_type", None)
+        if call_type is None:
+            call_type = self.logging_obj.model_call_details.get("call_type")
+        return call_type in {"completion", "acompletion"}
+
+    def _build_complete_streaming_response(self) -> Optional[ModelResponse]:
+        if not self.chunks:
+            return None
+        chunks_for_builder = [
+            chunk.model_copy(deep=True)
+            if isinstance(chunk, BaseModel)
+            else copy.deepcopy(chunk)
+            for chunk in self.chunks
+        ]
+        return litellm.stream_chunk_builder(
+            chunks=chunks_for_builder,
+            messages=self.messages,
+            logging_obj=self.logging_obj,
+        )
+
+    def _validate_complete_streaming_response(
+        self,
+        complete_streaming_response: Optional[ModelResponse],
+    ) -> None:
+        if not self._should_validate_complete_streaming_response():
+            return
+        validate_first_chat_completion_response(
+            model_response=complete_streaming_response,
+            model=self.model,
+            llm_provider=self.custom_llm_provider,
+        )
+
+    def _is_finish_chunk(self, chunk: ModelResponseStream) -> bool:
+        if not getattr(chunk, "choices", None):
+            return False
+        first_choice = chunk.choices[0]
+        return getattr(first_choice, "finish_reason", None) is not None
 
     def _check_max_streaming_duration(self) -> None:
         """Raise litellm.Timeout if the stream has exceeded LITELLM_MAX_STREAMING_DURATION_SECONDS."""
@@ -1810,13 +1851,6 @@ class CustomStreamWrapper:
                         self.logging_obj._update_completion_start_time(
                             completion_start_time=datetime.datetime.now()
                         )
-                    ## LOGGING
-                    if not litellm.disable_streaming_logging:
-                        executor.submit(
-                            self.run_success_logging_and_cache_storage,
-                            response,
-                            cache_hit,
-                        )  # log response
                     choice = response.choices[0]
                     if isinstance(choice, StreamingChoices):
                         self.response_uptil_now += choice.delta.get("content", "") or ""
@@ -1861,16 +1895,34 @@ class CustomStreamWrapper:
                         self._last_returned_hidden_params = response._hidden_params
                         # Add MCP metadata to final chunk if present
                         response = self._add_mcp_metadata_to_final_chunk(response)
+                    if self._is_finish_chunk(response):
+                        self._validate_complete_streaming_response(
+                            self._build_complete_streaming_response()
+                        )
+                    ## LOGGING
+                    if not litellm.disable_streaming_logging:
+                        executor.submit(
+                            self.run_success_logging_and_cache_storage,
+                            response,
+                            cache_hit,
+                        )  # log response
                     # RETURN RESULT
                     return response
 
         except StopIteration:
             if self.sent_last_chunk is True:
-                complete_streaming_response = litellm.stream_chunk_builder(
-                    chunks=self.chunks,
-                    messages=self.messages,
-                    logging_obj=self.logging_obj,
-                )
+                complete_streaming_response = self._build_complete_streaming_response()
+                try:
+                    self._validate_complete_streaming_response(
+                        complete_streaming_response
+                    )
+                except Exception as e:
+                    traceback_exception = traceback.format_exc()
+                    threading.Thread(
+                        target=self.logging_obj.failure_handler,
+                        args=(e, traceback_exception),
+                    ).start()
+                    self._handle_stream_fallback_error(e)
 
                 response = self.model_response_creator()
                 if complete_streaming_response is not None:
@@ -1923,6 +1975,18 @@ class CustomStreamWrapper:
                 raise  # Re-raise StopIteration
             else:
                 self.sent_last_chunk = True
+                complete_streaming_response = self._build_complete_streaming_response()
+                try:
+                    self._validate_complete_streaming_response(
+                        complete_streaming_response
+                    )
+                except Exception as e:
+                    traceback_exception = traceback.format_exc()
+                    threading.Thread(
+                        target=self.logging_obj.failure_handler,
+                        args=(e, traceback_exception),
+                    ).start()
+                    self._handle_stream_fallback_error(e)
                 processed_chunk = self.finish_reason_handler()
                 if self.stream_options is None:  # add usage as hidden param
                     usage = calculate_total_usage(chunks=self.chunks)
@@ -2055,6 +2119,11 @@ class CustomStreamWrapper:
                         # Add MCP metadata to final chunk if present (after hooks)
                         processed_chunk = self._add_mcp_metadata_to_final_chunk(processed_chunk)  # type: ignore[reportArgumentType]
 
+                    if self._is_finish_chunk(processed_chunk):
+                        self._validate_complete_streaming_response(
+                            self._build_complete_streaming_response()
+                        )
+
                     return processed_chunk
                 raise StopAsyncIteration
             else:  # temporary patch for non-aiohttp async calls
@@ -2087,11 +2156,24 @@ class CustomStreamWrapper:
         except (StopAsyncIteration, StopIteration):
             if self.sent_last_chunk is True:
                 # log the final chunk with accurate streaming values
-                complete_streaming_response = litellm.stream_chunk_builder(
-                    chunks=self.chunks,
-                    messages=self.messages,
-                    logging_obj=self.logging_obj,
-                )
+                complete_streaming_response = self._build_complete_streaming_response()
+                try:
+                    self._validate_complete_streaming_response(
+                        complete_streaming_response
+                    )
+                except Exception as e:
+                    traceback_exception = traceback.format_exc()
+                    if self.logging_obj is not None:
+                        threading.Thread(
+                            target=self.logging_obj.failure_handler,
+                            args=(e, traceback_exception),
+                        ).start()
+                        asyncio.create_task(
+                            self.logging_obj.async_failure_handler(
+                                e, traceback_exception
+                            )
+                        )
+                    self._handle_stream_fallback_error(e)
 
                 response = self.model_response_creator()
                 if complete_streaming_response is not None:
@@ -2144,6 +2226,24 @@ class CustomStreamWrapper:
                 raise StopAsyncIteration  # Re-raise StopIteration
             else:
                 self.sent_last_chunk = True
+                complete_streaming_response = self._build_complete_streaming_response()
+                try:
+                    self._validate_complete_streaming_response(
+                        complete_streaming_response
+                    )
+                except Exception as e:
+                    traceback_exception = traceback.format_exc()
+                    if self.logging_obj is not None:
+                        threading.Thread(
+                            target=self.logging_obj.failure_handler,
+                            args=(e, traceback_exception),
+                        ).start()
+                        asyncio.create_task(
+                            self.logging_obj.async_failure_handler(
+                                e, traceback_exception
+                            )
+                        )
+                    self._handle_stream_fallback_error(e)
                 processed_chunk = self.finish_reason_handler()
                 return processed_chunk
         except httpx.TimeoutException as e:  # if httpx read timeout error occues

@@ -247,6 +247,7 @@ class ModelInfoBase(ProviderSpecificModelInfo, total=False):
             "image_generation",
             "chat",
             "audio_transcription",
+            "moderation",
             "responses",
         ]
     ]
