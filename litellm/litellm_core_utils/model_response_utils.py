@@ -33,6 +33,36 @@ def validate_first_chat_completion_response(
     )
 
 
+def validate_image_generation_response(
+    image_response: Any,
+    model: Optional[str],
+    llm_provider: Optional[str] = None,
+) -> None:
+    if _image_generation_response_has_output(image_response):
+        return
+
+    raise APIResponseValidationError(
+        message="empty image generation response",
+        llm_provider=llm_provider or "",
+        model=model,
+    )
+
+
+def validate_responses_api_response(
+    responses_api_response: Any,
+    model: Optional[str],
+    llm_provider: Optional[str] = None,
+) -> None:
+    if _responses_api_response_has_output(responses_api_response):
+        return
+
+    raise APIResponseValidationError(
+        message="empty responses api response",
+        llm_provider=llm_provider or "",
+        model=model,
+    )
+
+
 def _first_chat_completion_choice_has_output(model_response: Any) -> bool:
     first_choice = _get_first_choice(model_response)
     if first_choice is None:
@@ -43,6 +73,98 @@ def _first_chat_completion_choice_has_output(model_response: Any) -> bool:
         return False
 
     return _chat_completion_message_has_output(message)
+
+
+def _image_generation_response_has_output(image_response: Any) -> bool:
+    data = getattr(image_response, "data", None)
+    if not isinstance(data, Sequence) or isinstance(data, (str, bytes)):
+        return False
+
+    return any(_image_object_has_output(image_object) for image_object in data)
+
+
+def _image_object_has_output(image_object: Any) -> bool:
+    return any(
+        _has_non_whitespace_text(_get_field(image_object, field_name))
+        for field_name in ("url", "b64_json")
+    )
+
+
+def _responses_api_response_has_output(responses_api_response: Any) -> bool:
+    status = getattr(responses_api_response, "status", None)
+    if status is not None and status != "completed":
+        return True
+
+    output = getattr(responses_api_response, "output", None)
+    if not isinstance(output, Sequence) or isinstance(output, (str, bytes)):
+        return False
+
+    return any(_responses_api_output_item_has_output(item) for item in output)
+
+
+def _responses_api_output_item_has_output(item: Any) -> bool:
+    item_type = _get_field(item, "type")
+
+    if item_type == "message":
+        return _responses_api_message_has_output(item)
+
+    if item_type == "image_generation_call":
+        return _has_non_whitespace_text(_get_field(item, "result"))
+
+    if item_type in {"function_call", "web_search_call", "file_search_call"}:
+        return True
+
+    if item_type == "reasoning":
+        return _responses_api_reasoning_has_output(item)
+
+    return _has_meaningful_response_output(item)
+
+
+def _responses_api_message_has_output(item: Any) -> bool:
+    content = _get_field(item, "content")
+    if not isinstance(content, Sequence) or isinstance(content, (str, bytes)):
+        return False
+
+    return any(
+        _responses_api_content_item_has_output(content_item) for content_item in content
+    )
+
+
+def _responses_api_content_item_has_output(content_item: Any) -> bool:
+    content_type = _get_field(content_item, "type")
+
+    if content_type in CHAT_COMPLETION_TEXT_BLOCK_TYPES:
+        return _has_non_whitespace_text(
+            _extract_text_value(_get_field(content_item, "text"))
+        )
+
+    if content_type in CHAT_COMPLETION_IMAGE_BLOCK_TYPES:
+        return True
+
+    return _has_meaningful_response_output(content_item)
+
+
+def _responses_api_reasoning_has_output(item: Any) -> bool:
+    for field_name in ("summary", "content", "encrypted_content"):
+        if _has_meaningful_response_output(_get_field(item, field_name)):
+            return True
+    return False
+
+
+def _has_meaningful_response_output(value: Any) -> bool:
+    if value is None:
+        return False
+
+    if isinstance(value, str):
+        return len(value.strip()) > 0
+
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        return any(_has_meaningful_response_output(item) for item in value)
+
+    if isinstance(value, dict):
+        return any(_has_meaningful_response_output(item) for item in value.values())
+
+    return True
 
 
 def _get_first_choice(model_response: Any) -> Optional[Any]:

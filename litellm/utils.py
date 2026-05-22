@@ -1436,6 +1436,36 @@ def post_call_processing(
                                     ],
                                     response=model_response,
                                 )
+            elif (
+                call_type == CallTypes.image_generation.value
+                or call_type == CallTypes.aimage_generation.value
+            ):
+                from litellm.litellm_core_utils.model_response_utils import (
+                    validate_image_generation_response,
+                )
+
+                validate_image_generation_response(
+                    image_response=original_response,
+                    model=model,
+                    llm_provider=getattr(original_response, "_hidden_params", {}).get(
+                        "custom_llm_provider", ""
+                    ),
+                )
+            elif (
+                call_type == CallTypes.responses.value
+                or call_type == CallTypes.aresponses.value
+            ):
+                from litellm.litellm_core_utils.model_response_utils import (
+                    validate_responses_api_response,
+                )
+
+                validate_responses_api_response(
+                    responses_api_response=original_response,
+                    model=model,
+                    llm_provider=getattr(original_response, "_hidden_params", {}).get(
+                        "custom_llm_provider", ""
+                    ),
+                )
 
     except Exception as e:
         raise e
