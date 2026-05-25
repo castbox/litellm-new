@@ -3,6 +3,7 @@ from litellm.litellm_core_utils.prompt_templates.factory import (
 )
 from litellm.llms.vertex_ai.gemini.transformation import (
     _gemini_convert_messages_with_history,
+    _process_gemini_media,
     _transform_request_body,
     check_if_part_exists_in_parts,
     _get_highest_media_resolution,
@@ -22,6 +23,32 @@ def test_check_if_part_exists_in_parts():
     assert check_if_part_exists_in_parts(parts, part)
     assert not check_if_part_exists_in_parts(parts, new_part, ["thought"])
     assert check_if_part_exists_in_parts(parts, new_part, ["text"])
+
+
+def test_process_gemini_media_converts_https_image_url_to_inline_data(monkeypatch):
+    """Vertex Gemini should not ask Vertex AI to fetch HTTP image URLs."""
+
+    def mock_convert_to_anthropic_image_obj(openai_image_url, format=None):
+        assert openai_image_url == "https://example.com/image.jpg"
+        return {
+            "type": "base64",
+            "media_type": format or "image/jpeg",
+            "data": "base64-image-data",
+        }
+
+    monkeypatch.setattr(
+        "litellm.llms.vertex_ai.gemini.transformation.convert_to_anthropic_image_obj",
+        mock_convert_to_anthropic_image_obj,
+    )
+
+    part = _process_gemini_media("https://example.com/image.jpg")
+
+    assert "inline_data" in part
+    assert "file_data" not in part
+    assert part["inline_data"] == {
+        "data": "base64-image-data",
+        "mime_type": "image/jpeg",
+    }
 
 
 def test_check_if_part_exists_in_parts_camel_case_snake_case():

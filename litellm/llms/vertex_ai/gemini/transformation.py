@@ -213,8 +213,13 @@ def _process_gemini_media(
             and (image_type := format or _get_image_mime_type_from_url(image_url))
             is not None
         ):
-            file_data = FileDataType(mime_type=image_type, file_uri=image_url)
-            part = {"file_data": file_data}
+            if image_type.startswith("image/"):
+                image = convert_to_anthropic_image_obj(image_url, format=format)
+                _blob = {"data": image["data"], "mime_type": image["media_type"]}
+                part = {"inline_data": cast(BlobType, _blob)}
+            else:
+                file_data = FileDataType(mime_type=image_type, file_uri=image_url)
+                part = {"file_data": file_data}
             return _apply_gemini_3_metadata(
                 part, model, media_resolution_enum, video_metadata
             )
