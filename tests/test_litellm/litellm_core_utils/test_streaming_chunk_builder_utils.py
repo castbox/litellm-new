@@ -8,6 +8,7 @@ sys.path.insert(
     0, os.path.abspath("../../..")
 )  # Adds the parent directory to the system path
 
+from litellm import stream_chunk_builder
 from litellm.litellm_core_utils.streaming_chunk_builder_utils import ChunkProcessor
 from litellm.types.utils import (
     ChatCompletionDeltaToolCall,
@@ -158,6 +159,76 @@ def test_get_combined_tool_content():
     ]
 
 
+def test_get_combined_thinking_content_preserves_interleaved_blocks():
+    base_chunk = {
+        "id": "chatcmpl-123",
+        "object": "chat.completion.chunk",
+        "created": 1234567890,
+        "model": "claude-sonnet-4-20250514",
+    }
+
+    def make_chunk(**delta_kwargs):
+        return ModelResponseStream(
+            **base_chunk,
+            choices=[
+                StreamingChoices(
+                    index=0,
+                    delta=Delta(**delta_kwargs),
+                    finish_reason=None,
+                )
+            ],
+        )
+
+    chunks = [
+        make_chunk(role="assistant", content=None),
+        make_chunk(
+            thinking_blocks=[
+                {"type": "thinking", "thinking": "Step 1 analysis...", "signature": None}
+            ]
+        ),
+        make_chunk(
+            thinking_blocks=[
+                {"type": "thinking", "thinking": None, "signature": "sig_block1"}
+            ]
+        ),
+        make_chunk(
+            thinking_blocks=[
+                {
+                    "type": "redacted_thinking",
+                    "data": "EuoBCoYBGAIi...encrypted...",
+                }
+            ]
+        ),
+        make_chunk(
+            thinking_blocks=[
+                {"type": "thinking", "thinking": "Step 2 analysis...", "signature": None}
+            ]
+        ),
+        make_chunk(
+            thinking_blocks=[
+                {"type": "thinking", "thinking": None, "signature": "sig_block2"}
+            ]
+        ),
+    ]
+
+    thinking_chunks = [
+        chunk for chunk in chunks if chunk["choices"][0]["delta"].get("thinking_blocks")
+    ]
+    processor = ChunkProcessor(chunks=chunks)
+    result = processor.get_combined_thinking_content(thinking_chunks)
+
+    assert result is not None
+    assert len(result) == 3
+    assert result[0]["type"] == "thinking"
+    assert result[0]["thinking"] == "Step 1 analysis..."
+    assert result[0]["signature"] == "sig_block1"
+    assert result[1]["type"] == "redacted_thinking"
+    assert result[1]["data"] == "EuoBCoYBGAIi...encrypted..."
+    assert result[2]["type"] == "thinking"
+    assert result[2]["thinking"] == "Step 2 analysis..."
+    assert result[2]["signature"] == "sig_block2"
+
+
 def test_cache_read_input_tokens_retained():
     chunk1 = ModelResponseStream(
         id="chatcmpl-95aabb85-c39f-443d-ae96-0370c404d70c",
@@ -244,6 +315,99 @@ def test_cache_read_input_tokens_retained():
     assert usage.cache_creation_input_tokens == 4
     assert usage.cache_read_input_tokens == 11775
     assert usage.prompt_tokens_details.cached_tokens == 11775
+
+
+def test_cache_read_input_tokens_normalized_from_dict_usage():
+    chunk1 = ModelResponseStream(
+        id="gen-1774245886-HVXFT9yYq2iBCcR35Nu7",
+        created=1774245886,
+        model="x-ai/grok-4-fast",
+        object="chat.completion.chunk",
+        system_fingerprint=None,
+        choices=[
+            StreamingChoices(
+                finish_reason=None,
+                index=0,
+                delta=Delta(
+                    provider_specific_fields=None,
+                    content="",
+                    role="assistant",
+                    function_call=None,
+                    tool_calls=None,
+                    audio=None,
+                ),
+                logprobs=None,
+            )
+        ],
+        provider_specific_fields=None,
+        stream_options={"include_usage": True},
+        usage=None,
+    )
+    chunk1.usage = {
+        "prompt_tokens": 756,
+        "completion_tokens": 0,
+        "total_tokens": 756,
+        "prompt_tokens_details": {
+            "cached_tokens": 755,
+            "cache_write_tokens": 0,
+            "audio_tokens": 0,
+            "video_tokens": 0,
+        },
+    }
+
+    chunk2 = ModelResponseStream(
+        id="gen-1774245886-HVXFT9yYq2iBCcR35Nu7",
+        created=1774245887,
+        model="x-ai/grok-4-fast",
+        object="chat.completion.chunk",
+        system_fingerprint=None,
+        choices=[
+            StreamingChoices(
+                finish_reason="stop",
+                index=0,
+                delta=Delta(
+                    provider_specific_fields=None,
+                    content="",
+                    role="assistant",
+                    function_call=None,
+                    tool_calls=None,
+                    audio=None,
+                ),
+                logprobs=None,
+            )
+        ],
+        provider_specific_fields=None,
+        stream_options={"include_usage": True},
+        usage=None,
+    )
+    chunk2.usage = {
+        "prompt_tokens": 0,
+        "completion_tokens": 401,
+        "total_tokens": 401,
+        "completion_tokens_details": {
+            "reasoning_tokens": 343,
+            "image_tokens": 0,
+            "audio_tokens": 0,
+        },
+    }
+
+    chunks = [chunk1, chunk2]
+    processor = ChunkProcessor(chunks=chunks)
+
+    usage = processor.calculate_usage(
+        chunks=chunks,
+        model="x-ai/grok-4-fast",
+        completion_output="",
+    )
+
+    assert usage.prompt_tokens == 756
+    assert usage.completion_tokens == 401
+    assert usage.total_tokens == 1157
+    assert usage.prompt_tokens_details is not None
+    assert usage.prompt_tokens_details.cached_tokens == 755
+    assert usage.cache_read_input_tokens == 755
+    assert usage.completion_tokens_details is not None
+    assert usage.completion_tokens_details.reasoning_tokens == 343
 
 
 def test_stream_chunk_builder_litellm_usage_chunks():
@@ -442,3 +606,93 @@ def test_stream_chunk_builder_anthropic_web_search():
     assert usage.completion_tokens == 27
     assert usage.total_tokens == 77    
     assert usage.server_tool_use['web_search_requests'] == 2
+
+
+def test_sort_chunks_handles_dict_hidden_params_created_at():
+    chunks = [
+        {
+            "id": "chunk_2",
+            "object": "chat.completion.chunk",
+            "created": 2,
+            "model": "gpt-4.1-mini",
+            "choices": [{"index": 0, "delta": {"role": "assistant", "content": "b"}}],
+            "_hidden_params": {"created_at": 2},
+        },
+        {
+            "id": "chunk_1",
+            "object": "chat.completion.chunk",
+            "created": 1,
+            "model": "gpt-4.1-mini",
+            "choices": [{"index": 0, "delta": {"role": "assistant", "content": "a"}}],
+            "_hidden_params": {"created_at": 1},
+        },
+    ]
+
+    processor = ChunkProcessor(chunks=chunks)
+    assert processor.chunks[0]["id"] == "chunk_1"
+    assert processor.chunks[1]["id"] == "chunk_2"
+
+
+def test_stream_chunk_builder_accepts_dict_snapshot_chunks():
+    chunk1 = ModelResponseStream(
+        id="chatcmpl-123",
+        created=1,
+        model="gpt-4.1-mini",
+        object="chat.completion.chunk",
+        choices=[
+            StreamingChoices(
+                finish_reason=None,
+                index=0,
+                delta=Delta(content="Hello ", role="assistant"),
+            )
+        ],
+    )
+    chunk2 = ModelResponseStream(
+        id="chatcmpl-123",
+        created=2,
+        model="gpt-4.1-mini",
+        object="chat.completion.chunk",
+        choices=[
+            StreamingChoices(
+                finish_reason="stop",
+                index=0,
+                delta=Delta(content="world", role=None),
+            )
+        ],
+    )
+    chunk1._hidden_params = {"created_at": 1}
+    chunk2._hidden_params = {"created_at": 2}
+
+    chunks = []
+    for chunk in [chunk2, chunk1]:
+        chunk_dict = chunk.model_dump()
+        chunk_dict["_hidden_params"] = chunk._hidden_params
+        chunks.append(chunk_dict)
+
+    response = stream_chunk_builder(chunks=chunks)
+    assert response is not None
+    assert response.choices[0].message.content == "Hello world"
+
+
+def test_stream_chunk_builder_dict_snapshot_preserves_hidden_provider_fields():
+    chunk = ModelResponseStream(
+        id="chatcmpl-123",
+        created=1,
+        model="gpt-4.1-mini",
+        object="chat.completion.chunk",
+        choices=[
+            StreamingChoices(
+                finish_reason="stop",
+                index=0,
+                delta=Delta(content="hi", role="assistant"),
+            )
+        ],
+    )
+    chunk_dict = chunk.model_dump()
+    chunk_dict["_hidden_params"] = {
+        "provider_specific_fields": {"traffic_type": "default"}
+    }
+
+    response = stream_chunk_builder(chunks=[chunk_dict])
+    assert response is not None
+    assert response._hidden_params["provider_specific_fields"]["traffic_type"] == "default"

@@ -18,6 +18,7 @@ import litellm
 from litellm.types.utils import (
     StandardLoggingPayload,
     Usage,
+    ModelResponseStream,
     StandardLoggingMetadata,
     StandardLoggingModelInformation,
     StandardLoggingHiddenParams,
@@ -29,6 +30,11 @@ from create_mock_standard_logging_payload import (
 from litellm.litellm_core_utils.litellm_logging import (
     StandardLoggingPayloadSetup,
 )
+from litellm.litellm_core_utils.streaming_handler import (
+    CustomStreamWrapper,
+    calculate_total_usage,
+)
+from litellm.litellm_core_utils.streaming_chunk_builder_utils import ChunkProcessor
 
 from litellm.integrations.custom_logger import CustomLogger
 
@@ -127,6 +133,414 @@ def test_get_usage_from_image_generation_response():
     assert usage.completion_tokens_details.text_tokens == 100
 
 
+def test_get_usage_preserves_chat_usage_when_input_output_aliases_present():
+    """
+    Some OpenAI-compatible providers return chat-completions usage with
+    prompt_tokens/completion_tokens, but also include input_tokens/output_tokens
+    aliases set to 0. This must not be treated as Responses API usage.
+    """
+    response_obj = {
+        "usage": {
+            "completion_tokens": 130,
+            "prompt_tokens": 669,
+            "total_tokens": 799,
+            "completion_tokens_details": {
+                "audio_tokens": 0,
+                "reasoning_tokens": 0,
+                "text_tokens": 130,
+            },
+            "prompt_tokens_details": {
+                "audio_tokens": 0,
+                "cached_tokens": 162,
+                "text_tokens": 669,
+            },
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "input_tokens_details": None,
+        }
+    }
+
+    usage = StandardLoggingPayloadSetup.get_usage_from_response_obj(response_obj)
+    usage_dict = StandardLoggingPayloadSetup.get_usage_as_dict(response_obj)
+
+    assert usage.prompt_tokens == 669
+    assert usage.completion_tokens == 130
+    assert usage.total_tokens == 799
+    assert usage.prompt_tokens_details is not None
+    assert usage.prompt_tokens_details.cached_tokens == 162
+    assert usage.prompt_tokens_details.text_tokens == 669
+
+    assert usage_dict["prompt_tokens"] == 669
+    assert usage_dict["completion_tokens"] == 130
+    assert usage_dict["total_tokens"] == 799
+    assert usage_dict["prompt_tokens_details"]["cached_tokens"] == 162
+
+
+def test_calculate_total_usage_preserves_prompt_token_details():
+    """
+    OpenAI-compatible streaming providers can return provider-side prompt cache
+    usage on the final usage chunk. The hidden usage added to the final stream
+    chunk must preserve that nested detail for spend logs.
+    """
+    chunk = ModelResponseStream(
+        id="chatcmpl-cache-details",
+        choices=[],
+        created=1721353246,
+        model="grok-4-fast-non-reasoning",
+        usage={
+            "completion_tokens": 130,
+            "prompt_tokens": 669,
+            "total_tokens": 799,
+            "completion_tokens_details": {
+                "audio_tokens": 0,
+                "reasoning_tokens": 0,
+                "text_tokens": 130,
+            },
+            "prompt_tokens_details": {
+                "audio_tokens": 0,
+                "cached_tokens": 162,
+                "text_tokens": 669,
+            },
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "input_tokens_details": None,
+        },
+    )
+
+    usage = calculate_total_usage(chunks=[chunk])
+
+    assert usage.prompt_tokens == 669
+    assert usage.completion_tokens == 130
+    assert usage.total_tokens == 799
+    assert usage.prompt_tokens_details is not None
+    assert usage.prompt_tokens_details.cached_tokens == 162
+    assert usage.prompt_tokens_details.text_tokens == 669
+    assert usage.completion_tokens_details is not None
+    assert usage.completion_tokens_details.text_tokens == 130
+
+
+def test_streaming_usage_preserves_prompt_details_from_previous_usage_chunk():
+    """
+    Some streaming paths can have more than one usage-bearing chunk. A later
+    usage chunk without prompt_tokens_details must not erase cached_tokens
+    already seen on an earlier provider usage chunk.
+    """
+    chunks = [
+        ModelResponseStream(
+            id="chatcmpl-cache-details",
+            choices=[],
+            created=1721353246,
+            model="grok-4-fast-non-reasoning",
+            usage={
+                "completion_tokens": 130,
+                "prompt_tokens": 669,
+                "total_tokens": 799,
+                "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 162,
+                    "text_tokens": 669,
+                },
+            },
+        ),
+        ModelResponseStream(
+            id="chatcmpl-local-hidden-usage",
+            choices=[],
+            created=1721353246,
+            model="grok-4-fast-non-reasoning",
+            usage={
+                "completion_tokens": 130,
+                "prompt_tokens": 669,
+                "total_tokens": 799,
+                "completion_tokens_details": {"reasoning_tokens": 0},
+            },
+        ),
+    ]
+
+    usage = ChunkProcessor(chunks=chunks, messages=[]).calculate_usage(
+        chunks=chunks,
+        model="grok-4-fast-non-reasoning",
+        completion_output="hello",
+        messages=[],
+        reasoning_tokens=0,
+    )
+
+    assert usage.prompt_tokens_details is not None
+    assert usage.prompt_tokens_details.cached_tokens == 162
+    assert usage.prompt_tokens_details.text_tokens == 669
+
+
+def test_standard_logging_payload_preserves_streamed_prompt_cache_details():
+    """
+    Regression test for sync/async streaming providers that send a final
+    usage-only chunk after the stop chunk. The standard logging payload should
+    preserve provider prompt cache details from that final usage chunk.
+    """
+    from litellm.litellm_core_utils.litellm_logging import Logging
+
+    stop_chunk = ModelResponseStream(
+        id="da87cddd-d22a-9b1a-8811-adce5de07366",
+        created=1776741712,
+        model="shubiaobiao/grok-4-fast-non-reasoning",
+        choices=[
+            litellm.utils.StreamingChoices(
+                finish_reason="stop",
+                index=0,
+                delta=litellm.utils.Delta(content="poem end"),
+            )
+        ],
+    )
+    usage_chunk = ModelResponseStream(
+        id="da87cddd-d22a-9b1a-8811-adce5de07366",
+        created=1776741712,
+        model="shubiaobiao/grok-4-fast-non-reasoning",
+        choices=[],
+        usage={
+            "completion_tokens": 149,
+            "prompt_tokens": 669,
+            "total_tokens": 818,
+            "completion_tokens_details": {
+                "accepted_prediction_tokens": None,
+                "audio_tokens": 0,
+                "reasoning_tokens": 0,
+                "rejected_prediction_tokens": None,
+                "text_tokens": 0,
+                "image_tokens": 0,
+            },
+            "prompt_tokens_details": {
+                "audio_tokens": 0,
+                "cached_tokens": 162,
+                "text_tokens": 669,
+                "image_tokens": 0,
+            },
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "input_tokens_details": None,
+            "claude_cache_creation_5_m_tokens": 0,
+            "claude_cache_creation_1_h_tokens": 0,
+        },
+    )
+
+    final_response = litellm.stream_chunk_builder(
+        chunks=[stop_chunk, usage_chunk],
+        messages=[{"role": "user", "content": "给我写一首诗"}],
+    )
+
+    logging_obj = Logging(
+        model="strategy-balanced-test1",
+        messages=[{"role": "user", "content": "给我写一首诗"}],
+        stream=True,
+        call_type="completion",
+        start_time=datetime.now(),
+        litellm_call_id="call-1",
+        function_id="test-function",
+    )
+    logging_obj.model_call_details.update(
+        {
+            "model": "strategy-balanced-test1",
+            "messages": [{"role": "user", "content": "给我写一首诗"}],
+            "stream": True,
+            "call_type": "completion",
+            "custom_llm_provider": "shubiaobiao",
+            "litellm_params": {
+                "metadata": {
+                    "model_group": "strategy-balanced-test1",
+                    "user_api_key_alias": "ai-seek",
+                    "user_api_key_team_id": "ea9c3442-2251-41bd-a951-e5ab8e8f3f3a",
+                    "user_api_key_user_id": "default_user_id",
+                    "user_api_key_team_alias": "ai-seek",
+                }
+            },
+        }
+    )
+
+    payload = logging_obj._build_standard_logging_payload(
+        final_response,
+        start_time=datetime.now(),
+        end_time=datetime.now(),
+    )
+
+    usage_object = payload["metadata"]["usage_object"]
+    assert usage_object["prompt_tokens_details"]["cached_tokens"] == 162
+    assert usage_object["prompt_tokens_details"]["text_tokens"] == 669
+    assert usage_object["completion_tokens_details"]["reasoning_tokens"] == 0
+
+
+def test_sync_streaming_logging_preserves_usage_only_chunk_prompt_cache_details(
+    monkeypatch,
+):
+    """
+    Sync OpenAI-compatible streams can send a stop chunk followed by a
+    usage-only chunk with choices=[] and prompt_tokens_details. Even when
+    stream_options.include_usage is False, LiteLLM still needs to keep that
+    usage-only chunk internally for final logging/spend tracking.
+    """
+    from litellm.litellm_core_utils import streaming_handler as streaming_handler_module
+    from litellm.litellm_core_utils.litellm_logging import Logging
+
+    class _ImmediateFuture:
+        def result(self):
+            return None
+
+    class _ImmediateExecutor:
+        def submit(self, fn, *args, **kwargs):
+            fn(*args, **kwargs)
+            return _ImmediateFuture()
+
+    stop_chunk = ModelResponseStream(
+        id="da87cddd-d22a-9b1a-8811-adce5de07366",
+        created=1776741712,
+        model="shubiaobiao/grok-4-fast-non-reasoning",
+        choices=[
+            litellm.utils.StreamingChoices(
+                finish_reason="stop",
+                index=0,
+                delta=litellm.utils.Delta(content="poem end"),
+            )
+        ],
+    )
+    usage_chunk = ModelResponseStream(
+        id="da87cddd-d22a-9b1a-8811-adce5de07366",
+        created=1776741712,
+        model="shubiaobiao/grok-4-fast-non-reasoning",
+        choices=[],
+        usage={
+            "completion_tokens": 149,
+            "prompt_tokens": 669,
+            "total_tokens": 818,
+            "completion_tokens_details": {
+                "accepted_prediction_tokens": None,
+                "audio_tokens": 0,
+                "reasoning_tokens": 0,
+                "rejected_prediction_tokens": None,
+                "text_tokens": 0,
+                "image_tokens": 0,
+            },
+            "prompt_tokens_details": {
+                "audio_tokens": 0,
+                "cached_tokens": 162,
+                "text_tokens": 669,
+                "image_tokens": 0,
+            },
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "input_tokens_details": None,
+            "claude_cache_creation_5_m_tokens": 0,
+            "claude_cache_creation_1_h_tokens": 0,
+        },
+    )
+
+    logging_obj = Logging(
+        model="strategy-balanced-test1",
+        messages=[{"role": "user", "content": "给我写一首诗"}],
+        stream=True,
+        call_type="completion",
+        start_time=datetime.now(),
+        litellm_call_id="call-1",
+        function_id="test-function",
+    )
+    logging_obj.model_call_details.update(
+        {
+            "model": "strategy-balanced-test1",
+            "messages": [{"role": "user", "content": "给我写一首诗"}],
+            "stream": True,
+            "call_type": "completion",
+            "custom_llm_provider": "shubiaobiao",
+            "litellm_params": {
+                "metadata": {
+                    "model_group": "strategy-balanced-test1",
+                    "user_api_key_alias": "ai-seek",
+                    "user_api_key_team_id": "ea9c3442-2251-41bd-a951-e5ab8e8f3f3a",
+                    "user_api_key_user_id": "default_user_id",
+                    "user_api_key_team_alias": "ai-seek",
+                }
+            },
+        }
+    )
+    logging_obj.async_success_handler = AsyncMock(return_value=None)
+
+    monkeypatch.setattr(streaming_handler_module, "executor", _ImmediateExecutor())
+
+    wrapper = CustomStreamWrapper(
+        completion_stream=iter([stop_chunk, usage_chunk]),
+        model="strategy-balanced-test1",
+        logging_obj=logging_obj,
+        custom_llm_provider="shubiaobiao",
+        stream_options=None,
+    )
+
+    with pytest.raises(StopIteration):
+        while True:
+            next(wrapper)
+
+    complete_streaming_response = logging_obj.model_call_details.get(
+        "complete_streaming_response"
+    )
+    assert complete_streaming_response is not None
+    assert complete_streaming_response.usage is not None
+    assert complete_streaming_response.usage.prompt_tokens == 669
+    assert complete_streaming_response.usage.completion_tokens == 149
+    assert complete_streaming_response.usage.prompt_tokens_details is not None
+    assert (
+        complete_streaming_response.usage.prompt_tokens_details.cached_tokens == 162
+    )
+
+    standard_logging_object = logging_obj.model_call_details.get(
+        "standard_logging_object"
+    )
+    assert standard_logging_object is not None
+    usage_object = standard_logging_object["metadata"]["usage_object"]
+    assert usage_object["prompt_tokens"] == 669
+    assert usage_object["completion_tokens"] == 149
+    assert usage_object["prompt_tokens_details"]["cached_tokens"] == 162
+
+
+@pytest.mark.asyncio
+async def test_daily_spend_transaction_reads_cached_tokens_from_prompt_details():
+    from litellm.proxy.db.db_spend_update_writer import DBSpendUpdateWriter
+
+    class MockPrismaClient:
+        @staticmethod
+        def get_request_status(payload):
+            return "success"
+
+    writer = DBSpendUpdateWriter()
+    payload = {
+        "user": "user-1",
+        "startTime": datetime.now(),
+        "api_key": "sk-test",
+        "model": "shubiaobiao/grok-4-fast-non-reasoning",
+        "model_group": "grok-4-fast-non-reasoning",
+        "custom_llm_provider": "shubiaobiao",
+        "call_type": "completion",
+        "prompt_tokens": 669,
+        "completion_tokens": 130,
+        "spend": 0.01,
+        "metadata": json.dumps(
+            {
+                "usage_object": {
+                    "prompt_tokens": 669,
+                    "completion_tokens": 130,
+                    "total_tokens": 799,
+                    "prompt_tokens_details": {
+                        "audio_tokens": 0,
+                        "cached_tokens": 162,
+                        "text_tokens": 669,
+                    },
+                }
+            }
+        ),
+    }
+
+    transaction = await writer._common_add_spend_log_transaction_to_daily_transaction(
+        payload=payload,
+        prisma_client=MockPrismaClient(),
+    )
+
+    assert transaction is not None
+    assert transaction["cache_read_input_tokens"] == 162
+    assert transaction["cache_creation_input_tokens"] == 0
+
+
 def test_get_additional_headers():
     additional_headers = {
         "x-ratelimit-limit-requests": "2000",
@@ -214,6 +628,22 @@ def test_get_standard_logging_metadata_user_api_key_hash():
 def test_get_standard_logging_metadata_invalid_user_api_key():
     invalid_hash = "not_a_valid_hash"
     metadata = {"user_api_key": invalid_hash}
+    result = StandardLoggingPayloadSetup.get_standard_logging_metadata(metadata)
+    all_fields_present(result)
+    assert result["user_api_key_hash"] is None
+
+
+def test_get_standard_logging_metadata_non_string_user_api_key():
+    """Non-string user_api_key should not be set as user_api_key_hash."""
+    metadata = {"user_api_key": 12345}
+    result = StandardLoggingPayloadSetup.get_standard_logging_metadata(metadata)
+    all_fields_present(result)
+    assert result["user_api_key_hash"] is None
+
+
+def test_get_standard_logging_metadata_none_user_api_key():
+    """None user_api_key should not be set as user_api_key_hash."""
+    metadata = {"user_api_key": None}
     result = StandardLoggingPayloadSetup.get_standard_logging_metadata(metadata)
     all_fields_present(result)
     assert result["user_api_key_hash"] is None
@@ -703,6 +1133,190 @@ def test_cost_breakdown_missing_in_standard_logging_payload():
     assert payload["response_cost"] == 0.0001
     
     print("✅ Cost breakdown missing test passed!")
+
+
+@pytest.mark.parametrize(
+    "use_combined_usage_object",
+    [False, True],
+    ids=["normal_usage_dict", "combined_usage_object"],
+)
+def test_usage_dict_roundtrip_in_payload(use_combined_usage_object):
+    """
+    Regression test: verify that usage data flows correctly through
+    get_standard_logging_object_payload without unnecessary Pydantic round-trips.
+
+    Checks:
+    - usage_object in StandardLoggingMetadata is a plain dict with correct token values
+    - prompt_tokens, completion_tokens, total_tokens on the payload match the usage dict
+    - Works for both normal usage dict path and combined_usage_object (realtime API) path
+    """
+    from litellm.litellm_core_utils.litellm_logging import (
+        get_standard_logging_object_payload,
+        Logging,
+    )
+    from datetime import datetime
+
+    logging_obj = Logging(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "Hi"}],
+        stream=False,
+        call_type="completion",
+        start_time=datetime.now(),
+        litellm_call_id="test-usage-roundtrip",
+        function_id="test-fn",
+    )
+
+    mock_response = {
+        "id": "chatcmpl-usage-test",
+        "object": "chat.completion",
+        "model": "gpt-4o",
+        "usage": {
+            "prompt_tokens": 42,
+            "completion_tokens": 58,
+            "total_tokens": 100,
+        },
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": "Hello!"},
+                "finish_reason": "stop",
+            }
+        ],
+    }
+
+    kwargs = {
+        "model": "gpt-4o",
+        "messages": [{"role": "user", "content": "Hi"}],
+        "response_cost": 0.01,
+        "custom_llm_provider": "openai",
+    }
+
+    if use_combined_usage_object:
+        kwargs["combined_usage_object"] = Usage(
+            prompt_tokens=42, completion_tokens=58, total_tokens=100
+        )
+
+    start_time = datetime.now()
+    end_time = datetime.now()
+
+    payload = get_standard_logging_object_payload(
+        kwargs=kwargs,
+        init_response_obj=mock_response,
+        start_time=start_time,
+        end_time=end_time,
+        logging_obj=logging_obj,
+        status="success",
+    )
+
+    assert payload is not None
+
+    # Top-level token fields must match
+    assert payload["prompt_tokens"] == 42
+    assert payload["completion_tokens"] == 58
+    assert payload["total_tokens"] == 100
+
+    # usage_object in metadata must be a plain dict (not a Pydantic model)
+    usage_obj = payload["metadata"]["usage_object"]
+    assert isinstance(usage_obj, dict)
+    assert usage_obj["prompt_tokens"] == 42
+    assert usage_obj["completion_tokens"] == 58
+    assert usage_obj["total_tokens"] == 100
+
+
+def test_standard_logging_payload_uses_actual_model_for_azure_router():
+    from litellm.litellm_core_utils.litellm_logging import (
+        Logging,
+        get_standard_logging_object_payload,
+    )
+
+    logging_obj = Logging(
+        model="azure_ai/model-router",
+        messages=[{"role": "user", "content": "Hello"}],
+        stream=False,
+        call_type="completion",
+        start_time=datetime.now(),
+        litellm_call_id="test-azure-router-opt-in",
+        function_id="test-fn",
+    )
+
+    kwargs = {
+        "model": "azure_ai/model-router",
+        "messages": [{"role": "user", "content": "Hello"}],
+        "response_cost": 0.00001,
+        "custom_llm_provider": "azure_ai",
+    }
+    mock_response = {
+        "id": "chatcmpl-azure-router-opt-in",
+        "object": "chat.completion",
+        "model": "azure_ai/gpt-5-nano-2025-08-07",
+        "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": "hello"},
+                "finish_reason": "stop",
+            }
+        ],
+    }
+
+    payload = get_standard_logging_object_payload(
+        kwargs=kwargs,
+        init_response_obj=mock_response,
+        start_time=datetime.now(),
+        end_time=datetime.now(),
+        logging_obj=logging_obj,
+        status="success",
+    )
+    assert payload is not None
+    assert payload["model"] == "azure_ai/gpt-5-nano-2025-08-07"
+
+
+def test_standard_logging_payload_uses_actual_model_for_azure_router_with_underscore():
+    from litellm.litellm_core_utils.litellm_logging import (
+        Logging,
+        get_standard_logging_object_payload,
+    )
+
+    logging_obj = Logging(
+        model="azure_ai/model_router",
+        messages=[{"role": "user", "content": "Hello"}],
+        stream=False,
+        call_type="completion",
+        start_time=datetime.now(),
+        litellm_call_id="test-azure-router-underscore",
+        function_id="test-fn",
+    )
+
+    kwargs = {
+        "model": "azure_ai/model_router",
+        "messages": [{"role": "user", "content": "Hello"}],
+        "response_cost": 0.00001,
+        "custom_llm_provider": "azure_ai",
+    }
+    mock_response = {
+        "id": "chatcmpl-azure-router-underscore",
+        "object": "chat.completion",
+        "model": "azure_ai/gpt-5-nano-2025-08-07",
+        "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": "hello"},
+                "finish_reason": "stop",
+            }
+        ],
+    }
+
+    payload = get_standard_logging_object_payload(
+        kwargs=kwargs,
+        init_response_obj=mock_response,
+        start_time=datetime.now(),
+        end_time=datetime.now(),
+        logging_obj=logging_obj,
+        status="success",
+    )
+    assert payload is not None
+    assert payload["model"] == "azure_ai/gpt-5-nano-2025-08-07"
 
 
 def test_merge_litellm_metadata_basic():

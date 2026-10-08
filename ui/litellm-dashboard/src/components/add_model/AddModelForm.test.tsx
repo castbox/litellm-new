@@ -7,6 +7,7 @@ import type { Team } from "../key_team_helpers/key_list";
 import type { CredentialItem } from "../networking";
 import { Providers } from "../provider_info_helpers";
 import AddModelForm from "./AddModelForm";
+import { TEST_MODES } from "./add_model_modes";
 
 vi.mock("../molecules/models/ProviderLogo", () => ({
   ProviderLogo: ({ provider, className }: { provider: string; className?: string }) => (
@@ -161,6 +162,14 @@ describe("AddModelForm", () => {
     renderWithProviders(<AddModelForm {...props} />);
 
     expect(await screen.findByRole("heading", { name: "Add Model" })).toBeInTheDocument();
+  });
+
+  it("should include moderation as a selectable model mode", () => {
+    expect(TEST_MODES).toEqual(
+      expect.arrayContaining([
+        { value: "moderation", label: "Moderation - /moderations" },
+      ]),
+    );
   });
 
   it("should show proxy admin only (not team admin) - should not see Select Team dropdown unless switch is toggled", async () => {

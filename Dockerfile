@@ -3,6 +3,7 @@ ARG LITELLM_BUILD_IMAGE=cgr.dev/chainguard/wolfi-base
 
 # Runtime image
 ARG LITELLM_RUNTIME_IMAGE=cgr.dev/chainguard/wolfi-base
+
 # Builder stage
 FROM $LITELLM_BUILD_IMAGE AS builder
 
@@ -11,8 +12,11 @@ WORKDIR /app
 
 USER root
 
+COPY docker/apk_add_with_retry.sh /usr/local/bin/apk_add_with_retry
+RUN chmod +x /usr/local/bin/apk_add_with_retry
+
 # Install build dependencies
-RUN apk add --no-cache bash gcc py3-pip python3 python3-dev openssl openssl-dev
+RUN apk_add_with_retry bash gcc py3-pip python3 python3-dev openssl openssl-dev
 
 RUN python -m pip install build
 
@@ -35,10 +39,16 @@ RUN pip install dist/*.whl
 # install dependencies as wheels
 RUN pip wheel --no-cache-dir --wheel-dir=/wheels/ -r requirements.txt
 
+# Build local proxy extras so bundled Prisma schema/migrations match this image.
+# This intentionally replaces the PyPI wheel collected from requirements.txt.
+RUN cd litellm-proxy-extras && rm -rf dist/* && python -m build && \
+    rm -f /wheels/litellm_proxy_extras-*.whl && \
+    cp dist/*.whl /wheels/
+
 # ensure pyjwt is used, not jwt
 RUN pip uninstall jwt -y
 RUN pip uninstall PyJWT -y
-RUN pip install PyJWT==2.9.0 --no-cache-dir
+RUN pip install PyJWT==2.12.0 --no-cache-dir
 
 # Runtime stage
 FROM $LITELLM_RUNTIME_IMAGE AS runtime
@@ -48,7 +58,36 @@ USER root
 
 # Install runtime dependencies (libsndfile needed for audio processing on ARM64)
 RUN apk add --no-cache bash openssl tzdata nodejs npm python3 py3-pip libsndfile && \
-    npm install -g npm@latest tar@latest
+    npm install -g npm@latest tar@7.5.11 glob@11.1.0 @isaacs/brace-expansion@5.0.1 minimatch@10.2.4 diff@8.0.3 && \
+    # SECURITY FIX: npm bundles tar, glob, and brace-expansion at multiple nested
+    # levels inside its dependency tree. `npm install -g <pkg>` only creates a
+    # SEPARATE global package, it does NOT replace npm's internal copies.
+    # We must find and replace EVERY copy inside npm's directory.
+    GLOBAL="$(npm root -g)" && \
+    find "$GLOBAL/npm" -type d -name "tar" -path "*/node_modules/tar" | while read d; do \
+        rm -rf "$d" && cp -rL "$GLOBAL/tar" "$d"; \
+    done && \
+    find "$GLOBAL/npm" -type d -name "glob" -path "*/node_modules/glob" | while read d; do \
+        rm -rf "$d" && cp -rL "$GLOBAL/glob" "$d"; \
+    done && \
+    find "$GLOBAL/npm" -type d -name "brace-expansion" -path "*/node_modules/@isaacs/brace-expansion" | while read d; do \
+        rm -rf "$d" && cp -rL "$GLOBAL/@isaacs/brace-expansion" "$d"; \
+    done && \
+    find "$GLOBAL/npm" -type d -name "minimatch" -path "*/node_modules/minimatch" | while read d; do \
+        rm -rf "$d" && cp -rL "$GLOBAL/minimatch" "$d"; \
+    done && \
+    find "$GLOBAL/npm" -type d -name "diff" -path "*/node_modules/diff" | while read d; do \
+        rm -rf "$d" && cp -rL "$GLOBAL/diff" "$d"; \
+    done && \
+    # SECURITY FIX: patch npm's own package.json metadata so scanners see the
+    # actual installed versions instead of the stale declared dependencies.
+    find /usr/local/lib /usr/lib -path "*/node_modules/npm/package.json" -exec \
+        sed -i 's/"tar": "\^7\.5\.[0-9]*"/"tar": "^7.5.10"/g; s/"minimatch": "\^10\.[0-9.]*"/"minimatch": "^10.2.4"/g' {} + 2>/dev/null && \
+    npm cache clean --force && \
+    # Remove the apk-tracked npm so its stale SBOM metadata (tar 7.5.9) is
+    # no longer visible to image scanners.  The globally installed npm@latest
+    # at /usr/local/lib/node_modules/npm/ remains fully functional.
+    { apk del --no-cache npm 2>/dev/null || true; }
 
 WORKDIR /app
 # Copy the current directory contents into the container at /app
@@ -62,9 +101,34 @@ COPY --from=builder /wheels/ /wheels/
 # Install the built wheel using pip; again using a wildcard if it's the only file
 RUN pip install *.whl /wheels/* --no-index --find-links=/wheels/ && rm -f *.whl && rm -rf /wheels
 
+# Replace the nodejs-wheel-binaries bundled node with the system node (fixes CVE-2025-55130)
+RUN NODEJS_WHEEL_NODE=$(find /usr/lib -path "*/nodejs_wheel/bin/node" 2>/dev/null) && \
+    if [ -n "$NODEJS_WHEEL_NODE" ]; then cp /usr/bin/node "$NODEJS_WHEEL_NODE"; fi
+
 # Remove test files and keys from dependencies
 RUN find /usr/lib -type f -path "*/tornado/test/*" -delete && \
     find /usr/lib -type d -path "*/tornado/test" -delete
+
+# SECURITY FIX: nodejs-wheel-binaries (pip package used by Prisma) bundles a complete
+# npm with old vulnerable deps at /usr/lib/python3.*/site-packages/nodejs_wheel/.
+# Patch every copy of tar, glob, and brace-expansion inside that tree.
+RUN GLOBAL="$(npm root -g)" && \
+    [ -n "$GLOBAL" ] || { echo "ERROR: npm root -g returned empty; aborting"; exit 1; } && \
+    find /usr/lib -type d -name "tar" -path "*/node_modules/tar" | while read d; do \
+        rm -rf "$d" && cp -rL "$GLOBAL/tar" "$d"; \
+    done && \
+    find /usr/lib -type d -name "glob" -path "*/node_modules/glob" | while read d; do \
+        rm -rf "$d" && cp -rL "$GLOBAL/glob" "$d"; \
+    done && \
+    find /usr/lib -type d -name "brace-expansion" -path "*/node_modules/@isaacs/brace-expansion" | while read d; do \
+        rm -rf "$d" && cp -rL "$GLOBAL/@isaacs/brace-expansion" "$d"; \
+    done && \
+    find /usr/lib -type d -name "minimatch" -path "*/node_modules/minimatch" | while read d; do \
+        rm -rf "$d" && cp -rL "$GLOBAL/minimatch" "$d"; \
+    done && \
+    find /usr/lib -type d -name "diff" -path "*/node_modules/diff" | while read d; do \
+        rm -rf "$d" && cp -rL "$GLOBAL/diff" "$d"; \
+    done
 
 # Install semantic_router and aurelio-sdk using script
 # Convert Windows line endings to Unix and make executable

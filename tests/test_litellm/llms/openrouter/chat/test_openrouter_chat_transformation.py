@@ -9,6 +9,7 @@ sys.path.insert(
 )  # Adds the parent directory to the system path
 
 from litellm.llms.openai.chat.gpt_transformation import OpenAIGPTConfig
+from litellm.llms.openai.openai import OpenAIChatCompletion
 from litellm.llms.openrouter.chat.transformation import (
     OpenRouterChatCompletionStreamingHandler,
     OpenrouterConfig,
@@ -99,6 +100,28 @@ def test_openrouter_extra_body_transformation():
     assert transformed_request["messages"] == [
         {"role": "user", "content": "Hello, world!"}
     ]
+
+
+def test_openrouter_streaming_defaults_include_usage_stream_options():
+    stream_options = OpenAIChatCompletion().get_stream_options(
+        stream_options=None,
+        api_base="https://openrouter.ai/api/v1",
+        custom_llm_provider="openrouter",
+    )
+
+    assert stream_options == {"stream_options": {"include_usage": True}}
+
+
+def test_openrouter_streaming_respects_explicit_stream_options():
+    explicit_stream_options = {"include_usage": False, "custom_key": "custom_value"}
+
+    stream_options = OpenAIChatCompletion().get_stream_options(
+        stream_options=explicit_stream_options,
+        api_base="https://openrouter.ai/api/v1",
+        custom_llm_provider="openrouter",
+    )
+
+    assert stream_options == {"stream_options": explicit_stream_options}
 
 
 def test_openrouter_cache_control_flag_removal():
@@ -469,7 +492,17 @@ def test_openrouter_cost_tracking_streaming():
         "id": "gen-stream-456",
         "created": 1234567890,
         "model": "openrouter/anthropic/claude-sonnet-4.5",
-        "usage": {"prompt_tokens": 5, "completion_tokens": 10, "total_tokens": 15, "cost": 0.0001},
+        "usage": {
+            "prompt_tokens": 5,
+            "completion_tokens": 10,
+            "total_tokens": 15,
+            "cost": 0.0001,
+            "prompt_tokens_details": {
+                "cached_tokens": 4,
+                "cache_write_tokens": 0,
+                "audio_tokens": 0,
+            },
+        },
         "choices": [{"delta": {"content": "", "reasoning": None}, "finish_reason": "stop", "index": 0}],
     }
 
@@ -489,6 +522,8 @@ def test_openrouter_cost_tracking_streaming():
     # Verify cost field is preserved in the Usage object - this is the key data for cost tracking
     # The chunk_parser converts the dict to a Usage Pydantic model which includes the cost field
     assert result2.usage.cost == 0.0001
+    assert result2.usage.prompt_tokens_details is not None
+    assert result2.usage.prompt_tokens_details.cached_tokens == 4
 
 
 def test_openrouter_reasoning_models_allow_reasoning_effort_param():

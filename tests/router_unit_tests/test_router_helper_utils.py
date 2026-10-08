@@ -13,6 +13,7 @@ import pytest
 import litellm
 from unittest.mock import patch, MagicMock, AsyncMock
 from create_mock_standard_logging_payload import create_standard_logging_payload
+from litellm.router_strategy.cost_latency_balanced import CostLatencyBalancedRouting
 from litellm.types.utils import StandardLoggingPayload
 from litellm.types.router import Deployment, LiteLLM_Params
 
@@ -807,7 +808,7 @@ def test_add_deployment(model_list):
     deployment = router.get_deployment_by_model_group_name(
         model_group_name="gpt-3.5-turbo"
     )
-    deployment["model_info"]["id"] = 100
+    deployment["model_info"]["id"] = "100"
     ## Test 1: call user facing function
     router.add_deployment(deployment=deployment)
 
@@ -902,6 +903,37 @@ def test_update_settings(model_list):
     router.update_settings(**{"allowed_fails": 20})
     assert router.allowed_fails != pre_update_allowed_fails
     assert router.allowed_fails == 20
+
+
+def test_update_settings_can_toggle_cost_latency_balanced_custom_strategy(model_list):
+    router = Router(model_list=model_list)
+
+    router.update_settings(
+        **{
+            "custom_routing_strategy": "cost-latency-balanced",
+            "custom_routing_strategy_args": {
+                "default_routing_mode": "balanced",
+                "per_model_group_routing": {"gpt-3.5-turbo": "cost-first"},
+            },
+        }
+    )
+
+    assert router.custom_routing_strategy == "cost-latency-balanced"
+    assert router.custom_routing_strategy_args == {
+        "default_routing_mode": "balanced",
+        "per_model_group_routing": {"gpt-3.5-turbo": "cost-first"},
+    }
+    assert isinstance(router._custom_routing_strategy, CostLatencyBalancedRouting)
+    assert (
+        router._custom_routing_strategy.routing_config.per_model_group_routing
+        == {"gpt-3.5-turbo": "cost-first"}
+    )
+
+    router.update_settings(**{"custom_routing_strategy": None})
+
+    assert router.custom_routing_strategy is None
+    assert router.custom_routing_strategy_args is None
+    assert getattr(router, "_custom_routing_strategy", None) is None
 
 
 def test_common_checks_available_deployment(model_list):
@@ -2198,3 +2230,33 @@ def test_get_valid_args():
     # Verify it contains keyword-only arguments too
     # These are common Router.__init__ parameters
     assert "assistants_config" in valid_args or "search_tools" in valid_args
+
+
+def test_get_router_model_info_with_deployment_object():
+    """Test get_router_model_info accepts Deployment object directly and reuses LiteLLM_Params"""
+    router = Router(
+        model_list=[
+            {
+                "model_name": "gpt-4",
+                "litellm_params": {"model": "gpt-4", "api_key": "test-key"},
+                "model_info": {"id": "test-id"},
+            }
+        ]
+    )
+
+    # Get the Deployment object (not dict)
+    deployment = router.get_deployment(model_id="test-id")
+    assert deployment is not None
+    assert isinstance(deployment, Deployment)
+    assert isinstance(deployment.litellm_params, LiteLLM_Params)
+
+    # Pass Deployment directly (not .model_dump()) - this exercises the isinstance check
+    # that reuses the existing LiteLLM_Params instead of reconstructing it
+    model_info = router.get_router_model_info(
+        deployment=deployment,
+        received_model_name="gpt-4",
+    )
+
+    # Verify we got valid model info back
+    assert model_info is not None
+    assert isinstance(model_info, dict)

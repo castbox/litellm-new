@@ -2,9 +2,264 @@
 Utility functions for ModelResponse and ModelResponseStream objects.
 """
 
-from typing import Any
+from collections.abc import Sequence
+from typing import Any, Optional
 
+from litellm.exceptions import APIResponseValidationError
 from litellm.types.utils import Delta, ModelResponseBase, ModelResponseStream
+
+CHAT_COMPLETION_IMAGE_BLOCK_TYPES = {"image", "image_url", "input_image"}
+CHAT_COMPLETION_TEXT_BLOCK_TYPES = {"input_text", "output_text", "text"}
+
+
+def validate_first_chat_completion_response(
+    model_response: Any,
+    model: Optional[str],
+    llm_provider: Optional[str] = None,
+) -> None:
+    """
+    Validate that the first chat completion choice contains usable output.
+
+    Raises:
+        APIResponseValidationError: If the first choice is missing or empty.
+    """
+    if _first_chat_completion_choice_has_output(model_response):
+        return
+
+    raise APIResponseValidationError(
+        message="empty completion response",
+        llm_provider=llm_provider or "",
+        model=model,
+    )
+
+
+def validate_image_generation_response(
+    image_response: Any,
+    model: Optional[str],
+    llm_provider: Optional[str] = None,
+) -> None:
+    if _image_generation_response_has_output(image_response):
+        return
+
+    raise APIResponseValidationError(
+        message="empty image generation response",
+        llm_provider=llm_provider or "",
+        model=model,
+    )
+
+
+def validate_responses_api_response(
+    responses_api_response: Any,
+    model: Optional[str],
+    llm_provider: Optional[str] = None,
+) -> None:
+    if _responses_api_response_has_output(responses_api_response):
+        return
+
+    raise APIResponseValidationError(
+        message="empty responses api response",
+        llm_provider=llm_provider or "",
+        model=model,
+    )
+
+
+def _first_chat_completion_choice_has_output(model_response: Any) -> bool:
+    first_choice = _get_first_choice(model_response)
+    if first_choice is None:
+        return False
+
+    message = getattr(first_choice, "message", None)
+    if message is None:
+        return False
+
+    return _chat_completion_message_has_output(message)
+
+
+def _image_generation_response_has_output(image_response: Any) -> bool:
+    data = getattr(image_response, "data", None)
+    if not isinstance(data, Sequence) or isinstance(data, (str, bytes)):
+        return False
+
+    return any(_image_object_has_output(image_object) for image_object in data)
+
+
+def _image_object_has_output(image_object: Any) -> bool:
+    return any(
+        _has_non_whitespace_text(_get_field(image_object, field_name))
+        for field_name in ("url", "b64_json")
+    )
+
+
+def _responses_api_response_has_output(responses_api_response: Any) -> bool:
+    status = getattr(responses_api_response, "status", None)
+    if status is not None and status != "completed":
+        return True
+
+    output = getattr(responses_api_response, "output", None)
+    if not isinstance(output, Sequence) or isinstance(output, (str, bytes)):
+        return False
+
+    return any(_responses_api_output_item_has_output(item) for item in output)
+
+
+def _responses_api_output_item_has_output(item: Any) -> bool:
+    item_type = _get_field(item, "type")
+
+    if item_type == "message":
+        return _responses_api_message_has_output(item)
+
+    if item_type == "image_generation_call":
+        return _has_non_whitespace_text(_get_field(item, "result"))
+
+    if item_type in {"function_call", "web_search_call", "file_search_call"}:
+        return True
+
+    if item_type == "reasoning":
+        return _responses_api_reasoning_has_output(item)
+
+    return _has_meaningful_response_output(item)
+
+
+def _responses_api_message_has_output(item: Any) -> bool:
+    content = _get_field(item, "content")
+    if not isinstance(content, Sequence) or isinstance(content, (str, bytes)):
+        return False
+
+    return any(
+        _responses_api_content_item_has_output(content_item) for content_item in content
+    )
+
+
+def _responses_api_content_item_has_output(content_item: Any) -> bool:
+    content_type = _get_field(content_item, "type")
+
+    if content_type in CHAT_COMPLETION_TEXT_BLOCK_TYPES:
+        return _has_non_whitespace_text(
+            _extract_text_value(_get_field(content_item, "text"))
+        )
+
+    if content_type in CHAT_COMPLETION_IMAGE_BLOCK_TYPES:
+        return True
+
+    return _has_meaningful_response_output(content_item)
+
+
+def _responses_api_reasoning_has_output(item: Any) -> bool:
+    for field_name in ("summary", "content", "encrypted_content"):
+        if _has_meaningful_response_output(_get_field(item, field_name)):
+            return True
+    return False
+
+
+def _has_meaningful_response_output(value: Any) -> bool:
+    if value is None:
+        return False
+
+    if isinstance(value, str):
+        return len(value.strip()) > 0
+
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        return any(_has_meaningful_response_output(item) for item in value)
+
+    if isinstance(value, dict):
+        return any(_has_meaningful_response_output(item) for item in value.values())
+
+    return True
+
+
+def _get_first_choice(model_response: Any) -> Optional[Any]:
+    choices = getattr(model_response, "choices", None)
+    if not isinstance(choices, Sequence) or isinstance(choices, (str, bytes)):
+        return None
+    if len(choices) == 0:
+        return None
+    return choices[0]
+
+
+def _chat_completion_message_has_output(message: Any) -> bool:
+    content = getattr(message, "content", None)
+
+    if _has_non_whitespace_text(content):
+        return True
+
+    if _content_blocks_have_output(content):
+        return True
+
+    images = getattr(message, "images", None)
+    if _has_items(images):
+        return True
+
+    if getattr(message, "audio", None) is not None:
+        return True
+
+    if _has_non_whitespace_text(getattr(message, "reasoning_content", None)):
+        return True
+
+    thinking_blocks = getattr(message, "thinking_blocks", None)
+    if _has_items(thinking_blocks):
+        return True
+
+    tool_calls = getattr(message, "tool_calls", None)
+    if _has_items(tool_calls):
+        return True
+
+    return getattr(message, "function_call", None) is not None
+
+
+def _content_blocks_have_output(content: Any) -> bool:
+    if not isinstance(content, Sequence) or isinstance(content, (str, bytes)):
+        return False
+
+    for block in content:
+        if _content_block_has_output(block):
+            return True
+
+    return False
+
+
+def _content_block_has_output(block: Any) -> bool:
+    if _has_non_whitespace_text(block):
+        return True
+
+    block_type = _get_field(block, "type")
+    if block_type in CHAT_COMPLETION_IMAGE_BLOCK_TYPES:
+        return True
+
+    if block_type in CHAT_COMPLETION_TEXT_BLOCK_TYPES and _has_non_whitespace_text(
+        _extract_text_value(_get_field(block, "text"))
+    ):
+        return True
+
+    if _has_non_whitespace_text(_extract_text_value(_get_field(block, "text"))):
+        return True
+
+    return any(_get_field(block, field_name) is not None for field_name in ("image", "image_url"))
+
+
+def _extract_text_value(text_value: Any) -> Optional[str]:
+    if isinstance(text_value, str):
+        return text_value
+
+    if isinstance(text_value, dict):
+        nested_text = text_value.get("text") or text_value.get("value")
+        return nested_text if isinstance(nested_text, str) else None
+
+    nested_text = getattr(text_value, "text", None)
+    return nested_text if isinstance(nested_text, str) else None
+
+
+def _get_field(value: Any, field_name: str) -> Any:
+    if isinstance(value, dict):
+        return value.get(field_name)
+    return getattr(value, field_name, None)
+
+
+def _has_non_whitespace_text(value: Any) -> bool:
+    return isinstance(value, str) and len(value.strip()) > 0
+
+
+def _has_items(value: Any) -> bool:
+    return isinstance(value, Sequence) and not isinstance(value, (str, bytes)) and len(value) > 0
 
 
 def is_model_response_stream_empty(model_response: ModelResponseStream) -> bool:
@@ -114,23 +369,19 @@ def _is_choice_non_empty(choice: Any) -> bool:
     """
     # Check finish_reason
     if hasattr(choice, "finish_reason") and choice.finish_reason is not None:
-
         return True
 
     # Check logprobs
     if hasattr(choice, "logprobs") and choice.logprobs is not None:
-
         return True
 
     # Check enhancements (if present)
     if hasattr(choice, "enhancements") and choice.enhancements is not None:
-
         return True
 
     # Deep check delta object
     if hasattr(choice, "delta") and choice.delta is not None:
         if _is_delta_non_empty(choice.delta):
-
             return True
 
     # Check model_extra for dynamically added fields on the choice
@@ -138,19 +389,15 @@ def _is_choice_non_empty(choice: Any) -> bool:
         for extra_field_name, extra_field_value in choice.model_extra.items():
             # Skip certain structural fields that are just default/None placeholders
             if extra_field_name == "index" and extra_field_value == 0:
-
                 continue
             if (
                 extra_field_name in {"finish_reason", "logprobs"}
                 and extra_field_value is None
             ):
-
                 continue
             if extra_field_name == "delta":
-
                 continue
             if _has_meaningful_content(extra_field_value):
-
                 return True
 
     # Check for any other non-standard fields on the choice
@@ -169,12 +416,10 @@ def _is_choice_non_empty(choice: Any) -> bool:
                 "enhancements",
             }
         ):
-
             continue
 
         attr_value = getattr(choice, attr_name, None)
         if _has_meaningful_content(attr_value):
-
             return True
 
     return False
@@ -195,7 +440,6 @@ def _is_delta_non_empty(delta: Delta) -> bool:
         for extra_field_name, extra_field_value in delta.model_extra.items():
             # Even structural fields are meaningful if they have actual content
             if _has_meaningful_content(extra_field_value):
-
                 return True
 
     # Check all regular attributes of the delta object
@@ -210,7 +454,6 @@ def _is_delta_non_empty(delta: Delta) -> bool:
 
         attr_value = getattr(delta, attr_name, None)
         if _has_meaningful_content(attr_value):
-
             return True
 
     return False
