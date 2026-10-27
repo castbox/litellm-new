@@ -1,7 +1,7 @@
-
 import json
 import uuid
 from unittest.mock import Mock
+from typing import Final
 
 import httpx
 import pytest
@@ -422,7 +422,7 @@ async def test_gemini_ai_studio_async_completion_passes_files_api_uris_through_u
     ]
 
 
-async def test_vertex_ai_async_transform_inlines_only_the_urls_gemini_cannot_fetch_itself(async_only_image_fetch):
+async def test_vertex_ai_async_transform_inlines_remote_images_and_preserves_file_references(async_only_image_fetch):
     plain_http_png = f"http://img.example/{uuid.uuid4()}.png"
     extensionless_https = f"https://cdn.example/files/{uuid.uuid4().hex}"
     https_png = f"https://img.example/{uuid.uuid4()}.png"
@@ -464,8 +464,34 @@ async def test_vertex_ai_async_transform_inlines_only_the_urls_gemini_cannot_fet
         {"text": "Describe these"},
         inlined,
         inlined,
-        {"file_data": {"mime_type": "image/png", "file_uri": https_png}},
-        {"file_data": {"mime_type": "image/webp", "file_uri": hinted_extensionless}},
+        inlined,
+        {"inline_data": {"mime_type": "image/webp", "data": async_only_image_fetch.base64_png}},
         {"file_data": {"mime_type": "application/pdf", "file_uri": files_api_pdf}},
     ]
-    assert sorted(async_only_image_fetch.fetched) == sorted([plain_http_png, extensionless_https])
+    assert sorted(async_only_image_fetch.fetched) == sorted(
+        [plain_http_png, extensionless_https, https_png, hinted_extensionless]
+    )
+
+
+@pytest.mark.parametrize("status", (200, 403))
+def test_vertex_remote_image_download_and_non_image_passthrough(monkeypatch, respx_mock, status):
+    import base64
+    from litellm.exceptions import ImageFetchError
+
+    image: Final = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+y4f8AAAAASUVORK5CYII="
+    )
+    url: Final = f"https://images.test/vertex-{status}.png"
+    monkeypatch.setattr(litellm, "user_url_validation", False)
+    route: Final = respx_mock.get(url).respond(status, content=image, headers={"content-type": "image/png"})
+    if status == 403:
+        with pytest.raises(ImageFetchError):
+            transformation._process_gemini_media(url, model="unit-gemini")
+    else:
+        assert transformation._process_gemini_media(url, model="unit-gemini") == {
+            "inline_data": {"mime_type": "image/png", "data": base64.b64encode(image).decode()}
+        }
+    assert route.call_count == 1
+    assert transformation._process_gemini_media(
+        "https://files.test/report.pdf", format="application/pdf", model="unit-gemini"
+    ) == {"file_data": {"mime_type": "application/pdf", "file_uri": "https://files.test/report.pdf"}}

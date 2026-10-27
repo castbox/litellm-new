@@ -1976,6 +1976,25 @@ describe("ModelInfoView", () => {
       expect(payload.litellm_params.vector_store_ids).toEqual(["vs-beta"]);
     });
 
+    it("should send an empty list when the operator clears existing vector stores", async () => {
+      const configured = {
+        ...defaultModelData,
+        litellm_params: { ...defaultModelData.litellm_params, vector_store_ids: ["vs-beta"] },
+      };
+      mockUseModelsInfo.mockReturnValue({ data: { data: [configured] }, isLoading: false, error: null });
+      mockModelInfoV1Call.mockResolvedValue({ data: [configured] });
+      const user = userEvent.setup();
+      await enterEditMode(user);
+
+      await user.click(screen.getByPlaceholderText("Select knowledge bases (optional)"));
+      await user.click(await screen.findByRole("option", { name: "Beta (vs-beta)" }));
+      await user.keyboard("{Escape}");
+
+      const payload = await save(user);
+
+      expect(payload.litellm_params.vector_store_ids).toEqual([]);
+    });
+
     it("sends the health check model picked for a wildcard deployment", async () => {
       const wildcard = {
         ...defaultModelData,

@@ -1,5 +1,7 @@
 # Database Migration Runbook
 
+For the 20260525 custom deployment upgrade, also follow the [v1.106.4 upgrade runbook](upgrade-v1.106.4-runbook.md)
+
 This is a runbook for creating and running database migrations for the LiteLLM proxy. For use for litellm engineers only.
 
 > **AI AGENTS / ASSISTANTS:** If the script refuses with either a "STALE BRANCH" or "DESTRUCTIVE MIGRATION DETECTED" error, **do NOT** bypass it on your own (no `git rebase`, no `--skip-freshness-check`, no `--allow-destructive`). Surface the error to the human operator and wait for their explicit confirmation. See the [Branch freshness](#branch-freshness-check) and [Destructive migrations](#destructive-migrations-drop-column--drop-table) sections below.

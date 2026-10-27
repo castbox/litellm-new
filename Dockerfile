@@ -15,10 +15,11 @@ ARG PGBOUNCER_SHA256=afd25dd61ee6775d37b40629b87ce08736b3e6955f3057bb212e410fbf2
 FROM $UV_IMAGE AS uvbin
 
 FROM $LITELLM_BUILD_IMAGE AS pgbouncer-builder
+COPY --chmod=755 docker/apk_add_with_retry.sh /usr/local/bin/apk_add_with_retry
 ARG PGBOUNCER_VERSION
 ARG PGBOUNCER_SHA256
 USER root
-RUN apk add --no-cache build-base pkgconf libevent-dev openssl-dev curl
+RUN apk_add_with_retry build-base pkgconf libevent-dev openssl-dev curl
 WORKDIR /build
 RUN curl -fsSL -o pgbouncer.tar.gz "https://www.pgbouncer.org/downloads/files/${PGBOUNCER_VERSION}/pgbouncer-${PGBOUNCER_VERSION}.tar.gz" && \
     echo "${PGBOUNCER_SHA256}  pgbouncer.tar.gz" | sha256sum -c - && \
@@ -46,6 +47,7 @@ RUN npm run build
 
 # Builder stage
 FROM $LITELLM_BUILD_IMAGE AS builder
+COPY --chmod=755 docker/apk_add_with_retry.sh /usr/local/bin/apk_add_with_retry
 
 WORKDIR /app
 USER root
@@ -53,7 +55,7 @@ USER root
 COPY --from=uvbin /uv /usr/local/bin/uv
 COPY --from=uvbin /uvx /usr/local/bin/uvx
 
-RUN apk add --no-cache \
+RUN apk_add_with_retry \
     bash \
     gcc \
     python-3.13 \
@@ -118,8 +120,9 @@ RUN sed -i 's/\r$//' docker/entrypoint.sh && chmod +x docker/entrypoint.sh && \
     sed -i 's/\r$//' docker/prod_entrypoint.sh && chmod +x docker/prod_entrypoint.sh
 
 FROM $LITELLM_BUILD_IMAGE AS liteadmin-builder
+COPY --chmod=755 docker/apk_add_with_retry.sh /usr/local/bin/apk_add_with_retry
 COPY --from=uvbin /uv /usr/local/bin/uv
-RUN apk add --no-cache python-3.13
+RUN apk_add_with_retry python-3.13
 ADD --checksum=sha256:4fb1847e28e2be30ba76dac94f02c4903291326516a0f4ba772f6ffb8b25d05c \
     https://github.com/BerriAI/litellm-admin-agent/archive/5661c805ce479a0cf11b842ea133cf8d22cd7e34.tar.gz /tmp/liteadmin.tar.gz
 RUN mkdir /tmp/liteadmin && tar xzf /tmp/liteadmin.tar.gz --strip-components=1 -C /tmp/liteadmin && \
@@ -129,6 +132,7 @@ RUN mkdir /tmp/liteadmin && tar xzf /tmp/liteadmin.tar.gz --strip-components=1 -
 
 # Runtime stage
 FROM $LITELLM_RUNTIME_IMAGE AS runtime
+COPY --chmod=755 docker/apk_add_with_retry.sh /usr/local/bin/apk_add_with_retry
 ARG LITELLM_RELEASE_TAG=""
 ENV LITELLM_RELEASE_TAG=${LITELLM_RELEASE_TAG}
 
@@ -141,7 +145,7 @@ USER root
 RUN echo "https://packages.wolfi.dev/os" >> /etc/apk/repositories
 
 # node (without npm) is required by the prisma CLI at runtime
-RUN apk add --no-cache bash openssl libssl3 tzdata nodejs python-3.13 libsndfile libevent
+RUN apk_add_with_retry bash openssl libssl3 tzdata nodejs python-3.13 libsndfile libevent
 COPY --from=pgbouncer-builder /usr/local/bin/pgbouncer /usr/local/bin/pgbouncer
 
 WORKDIR /app

@@ -127,6 +127,8 @@ from litellm.llms.bedrock.common_utils import (
 from litellm.llms.bedrock_mantle.chat.claude_transformation import bedrock_mantle_chat_config
 from litellm.llms.cohere.common_utils import CohereModelInfo
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler, http2_enabled
+from litellm.llms.deerapi_claude.messages.transformation import DeerapiClaudeMessagesConfig
+from litellm.llms.funcloud_claude.messages.transformation import FuncloudClaudeMessagesConfig
 from litellm.llms.openai.chat.gpt_5_transformation import OpenAIGPT5Config
 from litellm.llms.openai_like.json_loader import JSONProviderRegistry
 from litellm.llms.vertex_ai.common_utils import (
@@ -2910,12 +2912,8 @@ def _complete_anthropic_text(
 
 def _complete_anthropic(ctx: CompletionDispatchContext) -> _CompletionDispatchResult:
     acompletion: Final = ctx.acompletion
-    api_base = ctx.api_base
-    api_key = ctx.api_key
     client: Final = _dispatch_client_http(ctx)
     custom_llm_provider: Final = ctx.custom_llm_provider
-    custom_prompt_dict = ctx.custom_prompt_dict
-    headers: Final = ctx.headers
     litellm_params: Final = ctx.litellm_params
     logger_fn: Final = ctx.logger_fn
     logging: Final = ctx.logging
@@ -2925,30 +2923,52 @@ def _complete_anthropic(ctx: CompletionDispatchContext) -> _CompletionDispatchRe
     optional_params: Final = ctx.optional_params
     timeout: Final = ctx.timeout
 
-    api_key = api_key or litellm.anthropic_key or litellm.api_key or os.environ.get("ANTHROPIC_API_KEY")
-    custom_prompt_dict = custom_prompt_dict or litellm.custom_prompt_dict
-    # call /messages
-    # default route for all anthropic models
-    api_base = cast(
-        str | None,
-        api_base
-        or litellm.api_base
-        or get_secret("ANTHROPIC_API_BASE")
-        or get_secret("ANTHROPIC_BASE_URL")
-        or "https://api.anthropic.com/v1/messages",
+    is_custom_provider: Final = custom_llm_provider in {"funcloud_claude", "deerapi_claude"}
+    if is_custom_provider:
+        resolved_key: Final = ctx.api_key or litellm.api_key or get_secret_str(f"{custom_llm_provider.upper()}_API_KEY")
+        config: Final = (
+            FuncloudClaudeMessagesConfig()
+            if custom_llm_provider == "funcloud_claude"
+            else DeerapiClaudeMessagesConfig()
+        )
+        configured_base: Final = config.get_complete_url(
+            ctx.api_base or litellm.api_base, resolved_key, model, optional_params, litellm_params
+        )
+        headers, validated_base = config.validate_anthropic_messages_environment(
+            dict(ctx.headers or {}),
+            model,
+            messages,
+            optional_params,
+            litellm_params,
+            api_key=resolved_key,
+            api_base=configured_base,
+        )
+        api_base = validated_base or configured_base
+    else:
+        headers, api_base = (
+            ctx.headers,
+            (
+                ctx.api_base
+                or litellm.api_base
+                or get_secret_str("ANTHROPIC_API_BASE")
+                or get_secret_str("ANTHROPIC_BASE_URL")
+                or "https://api.anthropic.com/v1/messages"
+            ),
+        )
+    api_key: Final = (
+        None
+        if is_custom_provider
+        else (ctx.api_key or litellm.anthropic_key or litellm.api_key or get_secret_str("ANTHROPIC_API_KEY"))
     )
-
-    # Check if we should disable automatic URL suffix appending
-    disable_url_suffix: Final = get_secret_bool("LITELLM_ANTHROPIC_DISABLE_URL_SUFFIX")
-    if api_base is not None and not disable_url_suffix and not api_base.endswith("/v1/messages"):
-        api_base += "/v1/messages"
-    elif disable_url_suffix:
-        verbose_logger.debug("LITELLM_ANTHROPIC_DISABLE_URL_SUFFIX is set, skipping /v1/messages suffix")
+    disable_url_suffix: Final = is_custom_provider or get_secret_bool("LITELLM_ANTHROPIC_DISABLE_URL_SUFFIX")
+    complete_api_base: Final = (
+        f"{api_base}/v1/messages" if not disable_url_suffix and not api_base.endswith("/v1/messages") else api_base
+    )
 
     response: Final = anthropic_chat_completions.completion(
         model=model,
         messages=messages,
-        api_base=api_base,
+        api_base=complete_api_base,
         acompletion=acompletion,
         custom_prompt_dict=litellm.custom_prompt_dict,
         model_response=model_response,
@@ -3712,11 +3732,18 @@ def _complete_fal_ai(ctx: CompletionDispatchContext) -> _CompletionDispatchResul
 def _complete_vertex_ai_beta(
     ctx: CompletionDispatchContext,
 ) -> _CompletionDispatchResult:
+    config: Final = (
+        litellm.DeerAPIGeminiConfig
+        if ctx.custom_llm_provider == "deerapi_gemini"
+        else litellm.OminiLinkGeminiConfig
+        if ctx.custom_llm_provider == "ominilink_gemini"
+        else None
+    )
     acompletion: Final = ctx.acompletion
-    api_base = ctx.api_base
-    api_key: Final = ctx.api_key
+    api_base = config.get_api_base(ctx.api_base) if config is not None else ctx.api_base
+    api_key: Final = config.get_api_key(ctx.api_key) if config is not None else ctx.api_key
     client: Final = _dispatch_client_http(ctx)
-    custom_llm_provider: Final = ctx.custom_llm_provider
+    custom_llm_provider: Final = "gemini" if config is not None else ctx.custom_llm_provider
     headers: Final = ctx.headers
     litellm_params: Final = ctx.litellm_params
     logger_fn: Final = ctx.logger_fn
@@ -3746,10 +3773,9 @@ def _complete_vertex_ai_beta(
     )
 
     gemini_api_key: Final = (
-        api_key
-        or get_api_key_from_env()
-        or get_secret("PALM_API_KEY")  # older palm api key should also work
-        or litellm.api_key
+        (api_key or litellm.api_key)
+        if config is not None
+        else (api_key or get_api_key_from_env() or get_secret("PALM_API_KEY") or litellm.api_key)
     )
 
     api_base = api_base or litellm.api_base or get_secret("GEMINI_API_BASE")
@@ -6008,7 +6034,7 @@ def completion(
             pass  # Deprecated - handled in the openai compatible provider section above
         elif custom_llm_provider == "anthropic_text":
             response = _complete_anthropic_text(_dispatch_ctx)
-        elif custom_llm_provider == "anthropic":
+        elif custom_llm_provider in {"anthropic", "funcloud_claude", "deerapi_claude"}:
             response = _complete_anthropic(_dispatch_ctx)
         elif custom_llm_provider == "nlp_cloud":
             response = _complete_nlp_cloud(_dispatch_ctx)
@@ -6043,9 +6069,8 @@ def completion(
             raise ValueError(
                 "Palm was decommisioned on October 2024. Please use the `gemini/` route for Gemini Google AI Studio Models. Announcement: https://ai.google.dev/palm_docs/palm?hl=en"
             )
-        elif custom_llm_provider == "vertex_ai_beta" or custom_llm_provider == "gemini":
+        elif custom_llm_provider in {"vertex_ai_beta", "gemini", "deerapi_gemini", "ominilink_gemini"}:
             response = _complete_vertex_ai_beta(_dispatch_ctx)
-
         elif custom_llm_provider == "vertex_ai":
             response = _complete_vertex_ai(_dispatch_ctx)
         elif custom_llm_provider == "predibase":
@@ -9088,6 +9113,9 @@ def stream_chunk_builder(
         model: Final = chunks[0]["model"]
         # Initialize the response dictionary
         response: Final = processor.build_base_response(chunks)
+        refusal: Final = processor.get_combined_content(chunks, delta_key="refusal")
+        if refusal:
+            response["choices"][0]["message"]["refusal"] = refusal
 
         # Fast path for the common text-only streaming case:
         # avoid repeated multi-pass list scans over chunks.

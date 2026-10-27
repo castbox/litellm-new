@@ -25105,3 +25105,34 @@ async def test_responses_fallback_wrapper_disconnect_billing_keeps_the_primary_s
     wrapped.adopt_fallback_headers(fallback)
 
     assert wrapped.partial_response_on_disconnect().response.usage.output_tokens == primary_tokens + fallback_tokens
+
+
+@pytest.mark.parametrize("is_async", (False, True))
+async def test_empty_response_uses_backup_without_retrying_the_same_deployment(is_async, monkeypatch, respx_mock):
+    import httpx
+    import litellm
+
+    monkeypatch.setattr(litellm, "disable_aiohttp_transport", True)
+    primary = respx_mock.post("https://empty-primary.test/v1/chat/completions").mock(return_value=httpx.Response(200, json={
+        "id": "primary-unit", "object": "chat.completion", "created": 1, "model": "unit-model",
+        "choices": [{"index": 0, "message": {"role": "assistant", "content": ""}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 7, "completion_tokens": 0, "total_tokens": 7},
+    }))
+    backup = respx_mock.post("https://valid-backup.test/v1/chat/completions").mock(return_value=httpx.Response(200, json={
+        "id": "backup-unit", "object": "chat.completion", "created": 1, "model": "unit-model",
+        "choices": [{"index": 0, "message": {"role": "assistant", "content": "backup answer"}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 7, "completion_tokens": 3, "total_tokens": 10},
+    }))
+    router = litellm.Router(
+        model_list=[
+            {"model_name": "primary", "litellm_params": {"model": "openai/unit-model", "api_key": "unit-key", "api_base": "https://empty-primary.test/v1"}},
+            {"model_name": "backup", "litellm_params": {"model": "openai/unit-model", "api_key": "unit-key", "api_base": "https://valid-backup.test/v1"}},
+        ],
+        fallbacks=[{"primary": ["backup"]}], num_retries=2,
+    )
+    arguments = {"model": "primary", "messages": [{"role": "user", "content": "hello"}]}
+
+    result = await router.acompletion(**arguments) if is_async else router.completion(**arguments)
+
+    assert result.choices[0].message.content == "backup answer"
+    assert (primary.call_count, backup.call_count) == (1, 1)

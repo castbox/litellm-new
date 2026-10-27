@@ -3,9 +3,10 @@ import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from itertools import groupby
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Final, TypeAlias, TypedDict, Union, cast
+from typing import TYPE_CHECKING, Any, Final, TypeAlias, Union, cast
 
-from typing_extensions import ReadOnly, Required
+from pydantic import BaseModel, TypeAdapter
+from typing_extensions import ReadOnly, Required, TypedDict
 
 from litellm._logging import verbose_logger
 from litellm.litellm_core_utils.hidden_params import HIDDEN_PARAMS_ATTR, set_hidden_params
@@ -158,13 +159,16 @@ class _UsageBearingChunk(TypedDict, total=False):
 
 
 class _UsageSummary(TypedDict):
-    prompt_tokens: int | None
-    completion_tokens: int | None
-    cache_creation_input_tokens: int | None
-    cache_read_input_tokens: int | None
-    completion_tokens_details: CompletionTokensDetails | None
-    prompt_tokens_details: PromptTokensDetailsWrapper | None
-    cost: float | None
+    prompt_tokens: ReadOnly[int | None]
+    completion_tokens: ReadOnly[int | None]
+    cache_creation_input_tokens: ReadOnly[int | None]
+    cache_read_input_tokens: ReadOnly[int | None]
+    completion_tokens_details: ReadOnly[CompletionTokensDetailsWrapper | None]
+    prompt_tokens_details: ReadOnly[PromptTokensDetailsWrapper | None]
+    cost: ReadOnly[float | Mapping[str, float] | None]
+
+
+_USAGE_SUMMARY: Final = TypeAdapter(_UsageSummary)
 
 
 def _reports_prompt_side_usage(usage_summary: "_UsageSummary") -> bool:
@@ -674,7 +678,7 @@ class ChunkProcessor:
     ) -> ChatCompletionAssistantContentValue:
         content_list: Final[list[str]] = []
         for chunk in chunks:
-            choices = chunk["choices"]
+            choices = chunk.get("choices", ())
             for choice in choices:
                 delta = choice.get("delta", {})
                 content = delta.get(delta_key, "")
@@ -779,45 +783,35 @@ class ChunkProcessor:
             id=id,
         )
 
-    def _usage_chunk_calculation_helper(self, usage_chunk: Usage) -> "_UsageSummary":
-        prompt_tokens = 0
-        completion_tokens = 0
-        ## anthropic prompt caching information ##
-        cache_creation_input_tokens: int | None = None
-        cache_read_input_tokens: int | None = None
-        completion_tokens_details: CompletionTokensDetails | None = None
-        prompt_tokens_details: PromptTokensDetailsWrapper | None = None
-        cost: float | None = None
-
-        if "prompt_tokens" in usage_chunk:
-            prompt_tokens = usage_chunk.get("prompt_tokens", 0) or 0
-        if "completion_tokens" in usage_chunk:
-            completion_tokens = usage_chunk.get("completion_tokens", 0) or 0
-        if "cache_creation_input_tokens" in usage_chunk:
-            cache_creation_input_tokens = usage_chunk.get("cache_creation_input_tokens")
-        if "cache_read_input_tokens" in usage_chunk:
-            cache_read_input_tokens = usage_chunk.get("cache_read_input_tokens")
-        if "cost" in usage_chunk:
-            cost = usage_chunk.get("cost")
-        if hasattr(usage_chunk, "completion_tokens_details"):
-            if isinstance(usage_chunk.completion_tokens_details, dict):
-                completion_tokens_details = CompletionTokensDetails(**usage_chunk.completion_tokens_details)
-            elif isinstance(usage_chunk.completion_tokens_details, CompletionTokensDetails):
-                completion_tokens_details = usage_chunk.completion_tokens_details
-        if hasattr(usage_chunk, "prompt_tokens_details"):
-            if isinstance(usage_chunk.prompt_tokens_details, dict):
-                prompt_tokens_details = PromptTokensDetailsWrapper(**usage_chunk.prompt_tokens_details)
-            elif isinstance(usage_chunk.prompt_tokens_details, PromptTokensDetailsWrapper):
-                prompt_tokens_details = usage_chunk.prompt_tokens_details
-
+    def _usage_chunk_calculation_helper(self, usage_chunk: Usage | Mapping[str, object]) -> "_UsageSummary":
+        raw_usage: Final = usage_chunk.model_dump() if isinstance(usage_chunk, BaseModel) else usage_chunk
+        raw_completion_details: Final = raw_usage.get("completion_tokens_details")
+        raw_prompt_details: Final = raw_usage.get("prompt_tokens_details")
+        summary: Final = _USAGE_SUMMARY.validate_python(
+            {
+                "prompt_tokens": raw_usage.get("prompt_tokens") or 0,
+                "completion_tokens": raw_usage.get("completion_tokens") or 0,
+                "cache_creation_input_tokens": raw_usage.get("cache_creation_input_tokens"),
+                "cache_read_input_tokens": raw_usage.get("cache_read_input_tokens"),
+                "cost": raw_usage.get("cost"),
+                "completion_tokens_details": (
+                    raw_completion_details.model_dump()
+                    if isinstance(raw_completion_details, BaseModel)
+                    else raw_completion_details
+                ),
+                "prompt_tokens_details": (
+                    raw_prompt_details.model_dump() if isinstance(raw_prompt_details, BaseModel) else raw_prompt_details
+                ),
+            }
+        )
+        prompt_details: Final = summary["prompt_tokens_details"]
         return {
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
-            "cache_creation_input_tokens": cache_creation_input_tokens,
-            "cache_read_input_tokens": cache_read_input_tokens,
-            "completion_tokens_details": completion_tokens_details,
-            "prompt_tokens_details": prompt_tokens_details,
-            "cost": cost,
+            **summary,
+            "cache_read_input_tokens": (
+                prompt_details.cached_tokens
+                if summary["cache_read_input_tokens"] is None and prompt_details is not None
+                else summary["cache_read_input_tokens"]
+            ),
         }
 
     def count_reasoning_tokens(self, response: ModelResponse) -> int | None:
@@ -893,7 +887,7 @@ class ChunkProcessor:
         # is last-wins, so without preserving this separately the 1h breakdown is
         # lost and 1h cache writes get billed at the 5m rate.
         cache_creation_token_details: CacheCreationTokenDetails | None = None
-        cost: float | None = None
+        cost: float | Mapping[str, float] | None = None
 
         for chunk in chunks:
             usage_chunk = self._extract_usage_chunk(chunk)
@@ -1090,7 +1084,7 @@ class ChunkProcessor:
             "completion_tokens_details"
         ]
         prompt_tokens_details: PromptTokensDetailsWrapper | None = calculated_usage_per_chunk["prompt_tokens_details"]
-        cost: Final[float | None] = calculated_usage_per_chunk["cost"]
+        cost: Final = calculated_usage_per_chunk["cost"]
 
         try:
             returned_usage.prompt_tokens = (

@@ -8,6 +8,7 @@ export const TEST_MODES = [
   { value: "image_generation", label: "Image Generation - /images/generations" },
   { value: "image_edit", label: "Image Edit - /images/edits" },
   { value: "video_generation", label: "Video Generation - /videos" },
+  { value: "moderation", label: "Moderation - /moderations" },
   { value: "rerank", label: "Rerank - /rerank" },
   { value: "realtime", label: "Realtime - /realtime" },
   { value: "batch", label: "Batch - /batch" },

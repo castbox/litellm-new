@@ -2479,8 +2479,8 @@ def anthropic_messages_pt(
             messages.append(DEFAULT_USER_CONTINUE_MESSAGE_TYPED)
 
     # Bedrock invoke models have format: invoke/...
-    # Vertex AI Anthropic also doesn't support URL sources for images
-    is_bedrock_invoke = model.lower().startswith("invoke/")
+    # Vertex AI Anthropic and funcloud_claude don't support URL sources for images.
+    is_bedrock_invoke: Final = model.lower().startswith("invoke/") or llm_provider == "funcloud_claude"
     is_vertex_ai = llm_provider.startswith("vertex_ai") if llm_provider else False
     force_base64 = is_bedrock_invoke or is_vertex_ai
 
@@ -2511,11 +2511,6 @@ def anthropic_messages_pt(
                                     "url": image_url_value["url"],
                                     "format": image_url_value.get("format"),
                                 }
-                            # Bedrock invoke models have format: invoke/...
-                            # Vertex AI Anthropic also doesn't support URL sources for images
-                            is_bedrock_invoke = model.lower().startswith("invoke/")
-                            is_vertex_ai = llm_provider.startswith("vertex_ai") if llm_provider else False
-                            force_base64 = is_bedrock_invoke or is_vertex_ai
                             _anthropic_content_element = create_anthropic_image_param(
                                 image_url_input,
                                 format=format,

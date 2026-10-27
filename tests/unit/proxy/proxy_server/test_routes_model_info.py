@@ -347,6 +347,7 @@ def test_v2_model_info_reports_pricing_overrides_to_the_admin_ui(client, auth_as
     ]
     router: Final = MagicMock()
     router.model_list = model_list
+    router.get_model_list.return_value = model_list
     router.get_discovered_model_info = MagicMock(return_value={})
     monkeypatch.setattr(proxy_server, "llm_router", router)
     monkeypatch.setattr(proxy_server, "llm_model_list", model_list)
@@ -740,6 +741,7 @@ def mixed_auto_router_router(monkeypatch):
 
     router = MagicMock()
     router.model_list = model_list
+    router.get_model_list.return_value = model_list
     monkeypatch.setattr(proxy_server, "llm_router", router)
     monkeypatch.setattr(proxy_server, "llm_model_list", model_list)
     monkeypatch.setattr(proxy_server, "prisma_client", MagicMock())
@@ -872,6 +874,7 @@ def access_group_router(monkeypatch):
 
     router = MagicMock()
     router.model_list = model_list
+    router.get_model_list.return_value = model_list
     monkeypatch.setattr(proxy_server, "llm_router", router)
     monkeypatch.setattr(proxy_server, "llm_model_list", model_list)
     monkeypatch.setattr(proxy_server, "prisma_client", MagicMock())
@@ -930,3 +933,50 @@ def test_v2_model_info_access_group_paginates_over_the_filtered_set(client, auth
     assert _model_names(payload) == ["openai/*"]
     assert payload["total_count"] == 2
     assert payload["total_pages"] == 2
+
+
+@pytest.mark.parametrize(
+    ("query", "expected_names", "expected_count"),
+    (
+        ({}, ["public-chat", "backend-chat"], 2),
+        ({"search": "public"}, ["public-chat"], 1),
+        ({"model": "public-chat"}, ["public-chat"], 1),
+        ({"search": "hidden-chat"}, [], 0),
+        ({"page": 2, "size": 1}, ["backend-chat"], 2),
+        ({"user_models_only": "true"}, [], 0),
+    ),
+)
+def test_v2_model_info_keeps_visible_aliases_search_pagination_and_ownership(
+    client, auth_as, mock_prisma, monkeypatch, tmp_path, query, expected_names, expected_count
+):
+    from litellm.proxy._types import LitellmUserRoles
+
+    router: Final = litellm.Router(
+        model_list=[
+            {
+                "model_name": "backend-chat",
+                "litellm_params": {"model": "openai/local-chat", "api_key": "unit-test"},
+                "model_info": {"id": "backend-id", "db_model": True},
+            }
+        ],
+        model_group_alias={
+            "public-chat": {"model": "backend-chat", "hidden": False},
+            "hidden-chat": {"model": "backend-chat", "hidden": True},
+        },
+    )
+    configuration: Final = tmp_path / "alias-config.yaml"
+    configuration.write_text("model_list: []\n")
+    monkeypatch.setattr(proxy_server, "llm_router", router)
+    monkeypatch.setattr(proxy_server, "llm_model_list", router.model_list)
+    monkeypatch.setattr(proxy_server, "prisma_client", mock_prisma)
+    monkeypatch.setattr(proxy_server, "user_model", None)
+    monkeypatch.setattr(proxy_server, "user_config_file_path", str(configuration))
+    monkeypatch.setattr(proxy_server, "store_model_in_db", False)
+    monkeypatch.setattr(proxy_server, "proxy_config", proxy_server.ProxyConfig())
+    with auth_as(LitellmUserRoles.INTERNAL_USER_VIEW_ONLY):
+        response: Final = client.get("/v2/model/info", params=query)
+    assert response.status_code == 200, response.text
+    payload: Final = response.json()
+    assert [row["model_name"] for row in payload["data"]] == expected_names
+    assert payload["total_count"] == expected_count
+    assert [row["model_name"] for row in router.model_list] == ["backend-chat"]

@@ -1,3 +1,4 @@
+from types import MappingProxyType
 from typing import Final, cast
 from urllib.parse import urlparse
 
@@ -158,6 +159,55 @@ def inferred_provider(model: str | None) -> str | None:
         return None
 
 
+def _custom_openai_provider_info(
+    provider: str, api_base: str | None, api_key: str | None
+) -> tuple[str | None, str | None] | None:
+    match provider:
+        case "deerapi":
+            return litellm.DeerAPIChatConfig().get_openai_compatible_provider_info(api_base, api_key)
+        case "infiniai":
+            return litellm.InfiniAIChatConfig().get_openai_compatible_provider_info(api_base, api_key)
+        case "bltcy":
+            return litellm.BLTCYChatConfig().get_openai_compatible_provider_info(api_base, api_key)
+        case "xiakexing":
+            return litellm.XiakeXingChatConfig().get_openai_compatible_provider_info(api_base, api_key)
+        case "shubiaobiao":
+            return litellm.ShuBiaoBiaoChatConfig().get_openai_compatible_provider_info(api_base, api_key)
+        case "omnilink":
+            return litellm.OmniLinkChatConfig().get_openai_compatible_provider_info(api_base, api_key)
+        case "onerouter":
+            return litellm.OneRouterChatConfig().get_openai_compatible_provider_info(api_base, api_key)
+        case "funcloud":
+            return litellm.FunCloudChatConfig().get_openai_compatible_provider_info(api_base, api_key)
+        case "comflychat":
+            return litellm.ComflyChatChatConfig().get_openai_compatible_provider_info(api_base, api_key)
+        case "apimart":
+            return litellm.ApiMartChatConfig().get_openai_compatible_provider_info(api_base, api_key)
+        case "toapis":
+            return litellm.ToAPIsChatConfig().get_openai_compatible_provider_info(api_base, api_key)
+        case "azure_openai_v1":
+            return litellm.AzureOpenAIV1Config().get_openai_compatible_provider_info(api_base, api_key)
+        case _:
+            return None
+
+
+CUSTOM_OPENAI_ENDPOINTS: Final = MappingProxyType(
+    {
+        "https://api.deerapi.com/v1": "deerapi",
+        "https://cloud.infini-ai.com/maas/v1": "infiniai",
+        "https://api.bltcy.ai/v1/": "bltcy",
+        "https://apiscn.openroutex.com": "xiakexing",
+        "https://api.shubiaobiao.cn/v1": "shubiaobiao",
+        "https://api.ominilink.ai/v1": "omnilink",
+        "https://llm.onerouter.pro/v1": "onerouter",
+        "https://funcloud.ai/v1": "funcloud",
+        "https://ai.comfly.chat/v1": "comflychat",
+        "https://api.apimart.ai/v1": "apimart",
+        "https://toapis.com/v1": "toapis",
+    }
+)
+
+
 def get_llm_provider(
     model: str,
     custom_llm_provider: str | None = None,
@@ -263,6 +313,16 @@ def get_llm_provider(
         if api_base:
             for endpoint in litellm.openai_compatible_endpoints:
                 if _endpoint_matches_api_base(endpoint, api_base):
+                    if (
+                        endpoint in CUSTOM_OPENAI_ENDPOINTS
+                        and (
+                            provider_info := _custom_openai_provider_info(
+                                CUSTOM_OPENAI_ENDPOINTS[endpoint], api_base, api_key
+                            )
+                        )
+                        is not None
+                    ):
+                        return model, CUSTOM_OPENAI_ENDPOINTS[endpoint], provider_info[1], provider_info[0]
                     if endpoint == "api.perplexity.ai":
                         custom_llm_provider = "perplexity"
                         dynamic_api_key = get_secret_str("PERPLEXITYAI_API_KEY")
@@ -607,6 +667,10 @@ def _get_openai_compatible_provider_info(
         config_class: Final = create_config_class(provider_config)
         api_base, dynamic_api_key = config_class().get_openai_compatible_provider_info(api_base, api_key)
         return model, custom_llm_provider, dynamic_api_key, api_base
+
+    custom_provider_info: Final = _custom_openai_provider_info(custom_llm_provider, api_base, api_key)
+    if custom_provider_info is not None:
+        return model, custom_llm_provider, custom_provider_info[1], custom_provider_info[0]
 
     if custom_llm_provider == "perplexity":
         # perplexity is openai compatible, we just need to set this to custom_openai and have the api_base be https://api.perplexity.ai

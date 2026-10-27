@@ -1581,8 +1581,8 @@ async def async_post_call_failure_deployment_hook(
 
 
 def post_call_processing(
-    original_response,
-    model,
+    original_response: object,
+    model: str | None,
     optional_params: dict | None,
     original_function,
     rules_obj,
@@ -1592,14 +1592,29 @@ def post_call_processing(
             pass
         else:
             call_type: Final = original_function.__name__
+            from litellm.litellm_core_utils.model_response_utils import validate_non_chat_completion_response
+
+            validate_non_chat_completion_response(original_response, model, call_type)
             if call_type == CallTypes.completion.value or call_type == CallTypes.acompletion.value:
                 is_coroutine: Final = check_coroutine(original_response)
                 if is_coroutine is True:
                     pass
                 else:
-                    if isinstance(original_response, ModelResponse) and len(original_response.choices) > 0:
-                        model_response: Final[str | None] = original_response.choices[0].message.content
-                        if model_response is not None:
+                    if isinstance(original_response, ModelResponse):
+                        from litellm.litellm_core_utils.model_response_utils import (
+                            validate_first_chat_completion_response,
+                        )
+
+                        validate_first_chat_completion_response(
+                            model_response=original_response,
+                            model=model,
+                            llm_provider=getattr(original_response, "_hidden_params", {}).get(
+                                "custom_llm_provider", ""
+                            ),
+                        )
+
+                        model_response: Final = original_response.choices[0].message.content
+                        if isinstance(model_response, str):
                             ### POST-CALL RULES ###
                             rules_obj.post_call_rules(input=model_response, model=model)
                             ### JSON SCHEMA VALIDATION ###
@@ -3284,6 +3299,8 @@ def _get_builtin_model_info_for_registration(model: str, custom_llm_provider: st
 
 
 _runtime_registered_model_cost: Final[dict[str, dict[str, object]]] = {}  # mutable-ok: replayed on reload
+
+
 class _RegisteredPricingFields:
     """Explicitly registered rates per cost-map key, tied to the ``litellm.model_cost`` object they were
     registered on so a replaced catalog starts without them, as the entries they describe do."""
@@ -4836,7 +4853,7 @@ def get_optional_params(
             drop_params=bool(drop_params),
         )
 
-    elif custom_llm_provider == "gemini":
+    elif custom_llm_provider in {"gemini", "deerapi_gemini", "ominilink_gemini"}:
         optional_params = litellm.GoogleAIStudioGeminiConfig().map_openai_params(
             non_default_params=non_default_params,
             optional_params=optional_params,
@@ -8684,6 +8701,12 @@ class ProviderConfigManager:
             LlmProviders.ANTHROPIC: (lambda: litellm.AnthropicConfig(), False),
             # AZURE is handled as a special case in get_provider_chat_config()
             # so that base_model can be threaded through for model-type detection.
+            LlmProviders.FUNCLOUD_CLAUDE: (lambda: litellm.AnthropicConfig(), False),
+            LlmProviders.DEERAPI_CLAUDE: (lambda: litellm.AnthropicConfig(), False),
+            LlmProviders.AZURE_OPENAI_V1: (
+                lambda: litellm.AzureOpenAIV1Config(),
+                False,
+            ),
             LlmProviders.AZURE_AI: (
                 lambda model: ProviderConfigManager._get_azure_ai_config(model),
                 True,
@@ -8826,6 +8849,23 @@ class ProviderConfigManager:
             LlmProviders.HEROKU: (lambda: litellm.HerokuChatConfig(), False),
             LlmProviders.OCI: (lambda: litellm.OCIChatConfig(), False),
             LlmProviders.HYPERBOLIC: (lambda: litellm.HyperbolicChatConfig(), False),
+            LlmProviders.DEERAPI: (lambda: litellm.DeerAPIChatConfig(), False),
+            LlmProviders.INFINIAI: (lambda: litellm.InfiniAIChatConfig(), False),
+            LlmProviders.BLTCY: (lambda: litellm.BLTCYChatConfig(), False),
+            LlmProviders.XIAKEXING: (lambda: litellm.XiakeXingChatConfig(), False),
+            LlmProviders.SHUBIAOBIAO: (
+                lambda: litellm.ShuBiaoBiaoChatConfig(),
+                False,
+            ),
+            LlmProviders.OMNILINK: (lambda: litellm.OmniLinkChatConfig(), False),
+            LlmProviders.ONEROUTER: (lambda: litellm.OneRouterChatConfig(), False),
+            LlmProviders.FUNCLOUD: (lambda: litellm.FunCloudChatConfig(), False),
+            LlmProviders.COMFLYCHAT: (
+                lambda: litellm.ComflyChatChatConfig(),
+                False,
+            ),
+            LlmProviders.APIMART: (lambda: litellm.ApiMartChatConfig(), False),
+            LlmProviders.TOAPIS: (lambda: litellm.ToAPIsChatConfig(), False),
             LlmProviders.OVHCLOUD: (lambda: litellm.OVHCloudChatConfig(), False),
             LlmProviders.AMAZON_NOVA: (lambda: litellm.AmazonNovaChatConfig(), False),
             LlmProviders.LANGGRAPH: (
@@ -8988,7 +9028,6 @@ class ProviderConfigManager:
             if provider_config is None:
                 raise ValueError(f"Provider {provider.value} not found")
             return create_config_class(provider_config)()
-
         return None
 
     @staticmethod
@@ -9209,6 +9248,18 @@ class ProviderConfigManager:
             )
 
             return MinimaxMessagesConfig()
+        elif litellm.LlmProviders.FUNCLOUD_CLAUDE == provider:
+            from litellm.llms.funcloud_claude.messages.transformation import (
+                FuncloudClaudeMessagesConfig,
+            )
+
+            return FuncloudClaudeMessagesConfig()
+        elif litellm.LlmProviders.DEERAPI_CLAUDE == provider:
+            from litellm.llms.deerapi_claude.messages.transformation import (
+                DeerapiClaudeMessagesConfig,
+            )
+
+            return DeerapiClaudeMessagesConfig()
         elif litellm.LlmProviders.DEEPSEEK == provider:
             from litellm.llms.deepseek.messages.transformation import (
                 DeepSeekAnthropicMessagesConfig,

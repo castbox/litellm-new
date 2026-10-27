@@ -143,6 +143,33 @@ class TestToolSchemas:
 
 
 class TestSummariseUsageData:
+    def test_keeps_public_names_separate_from_backend_and_ranks_failures(self):
+        data = {
+            "metadata": {},
+            "results": [
+                {
+                    "breakdown": {
+                        "model_groups": {
+                            "public-a": {"metrics": {"spend": 5, "api_requests": 4, "successful_requests": 3, "failed_requests": 1, "total_tokens": 20}},
+                            "public-b": {"metrics": {"spend": 1, "api_requests": 7, "successful_requests": 2, "failed_requests": 5, "total_tokens": 30}},
+                        },
+                        "models": {"shared-backend": {"metrics": {"spend": 6, "api_requests": 11, "successful_requests": 5, "failed_requests": 6, "total_tokens": 50}}},
+                    }
+                },
+                {"breakdown": {"model_groups": {"public-a": {"metrics": {"spend": 5, "api_requests": 4, "successful_requests": 2, "failed_requests": 2, "total_tokens": 20}}}}},
+            ],
+        }
+
+        summary = _summarise_usage_data(data)
+
+        assert "Top Public Model Names by Spend:\n  - public-a: $10.0000 (8 reqs, 5 successful, 3 failed, 40 tokens)" in summary
+        assert "Top LiteLLM Models by Spend:\n  - shared-backend: $6.0000 (11 reqs, 5 successful, 6 failed, 50 tokens)" in summary
+        failure_section = summary.split("Top Public Model Names by Failed Requests:\n")[1].split("\n\n")[0]
+        assert failure_section == (
+            "  - public-b: $1.0000 (7 reqs, 2 successful, 5 failed, 30 tokens)\n"
+            "  - public-a: $10.0000 (8 reqs, 5 successful, 3 failed, 40 tokens)"
+        )
+
     def test_summarise_includes_totals(self):
         summary = _summarise_usage_data(SAMPLE_AGGREGATED_RESPONSE)
         assert "$50.25" in summary

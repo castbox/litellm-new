@@ -318,6 +318,17 @@ lemonade_key: Optional[str] = None
 sap_service_key: Optional[str] = None
 amazon_nova_api_key: Optional[str] = None
 inception_key: Optional[str] = None
+deerapi_key: Optional[str] = None
+infiniai_key: Optional[str] = None
+bltcy_key: Optional[str] = None
+xiakexing_key: Optional[str] = None
+shubiaobiao_key: Optional[str] = None
+omnilink_key: Optional[str] = None
+onerouter_key: Optional[str] = None
+funcloud_key: Optional[str] = None
+comflychat_key: Optional[str] = None
+apimart_key: Optional[str] = None
+toapis_key: Optional[str] = None
 common_cloud_provider_auth_params: dict = {
     "params": ["project", "region_name", "token"],
     "providers": ["vertex_ai", "bedrock", "watsonx", "azure", "vertex_ai_beta"],
@@ -524,6 +535,8 @@ priority_reservation: Optional[Dict[str, Union[float, "PriorityReservationDict"]
 # priority_reservation_settings is lazy-loaded via __getattr__
 # Only declare for type checking - at runtime __getattr__ handles it
 if TYPE_CHECKING:
+    from .llms.azure_openai_v1.chat.transformation import AzureOpenAIV1Config as AzureOpenAIV1Config
+
     priority_reservation_settings: Optional["PriorityReservationSettings"] = None
 
 
@@ -720,6 +733,17 @@ gigachat_models: Set = set()
 llamagate_models: Set = set()
 reducto_models: Set = set()
 bedrock_mantle_models: Set = set()
+deerapi_models: set[str] = set()  # mutable-ok: public provider catalogs are populated during initialization
+infiniai_models: set[str] = set()  # mutable-ok: public provider catalogs are populated during initialization
+bltcy_models: set[str] = set()  # mutable-ok: public provider catalogs are populated during initialization
+xiakexing_models: set[str] = set()  # mutable-ok: public provider catalogs are populated during initialization
+shubiaobiao_models: set[str] = set()  # mutable-ok: public provider catalogs are populated during initialization
+omnilink_models: set[str] = set()  # mutable-ok: public provider catalogs are populated during initialization
+onerouter_models: set[str] = set()  # mutable-ok: public provider catalogs are populated during initialization
+funcloud_models: set[str] = set()  # mutable-ok: public provider catalogs are populated during initialization
+comflychat_models: set[str] = set()  # mutable-ok: public provider catalogs are populated during initialization
+apimart_models: set[str] = set()  # mutable-ok: public provider catalogs are populated during initialization
+toapis_models: set[str] = set()  # mutable-ok: public provider catalogs are populated during initialization
 
 
 def is_bedrock_pricing_only_model(key: str) -> bool:
@@ -1011,16 +1035,43 @@ def _populate_provider_model_sets(model_cost_map: Dict) -> None:
             bedrock_mantle_models.add(key)
 
 
+def _populate_custom_provider_model_sets(model_cost_map: Mapping[str, object]) -> None:
+    from types import MappingProxyType
+
+    custom_catalogs: Final[Mapping[str, Callable[[str], None]]] = MappingProxyType(
+        {
+            "deerapi": deerapi_models.add,
+            "infiniai": infiniai_models.add,
+            "bltcy": bltcy_models.add,
+            "xiakexing": xiakexing_models.add,
+            "shubiaobiao": shubiaobiao_models.add,
+            "omnilink": omnilink_models.add,
+            "onerouter": onerouter_models.add,
+            "funcloud": funcloud_models.add,
+            "comflychat": comflychat_models.add,
+            "apimart": apimart_models.add,
+            "toapis": toapis_models.add,
+        }
+    )
+    from pydantic import TypeAdapter
+
+    for name, entry in TypeAdapter(Mapping[str, Mapping[str, object]]).validate_python(model_cost_map).items():
+        if isinstance(provider := entry.get("litellm_provider"), str) and provider in custom_catalogs:
+            custom_catalogs[provider](name)
+
+
 def add_known_models(model_cost_map: Optional[Dict] = None):
     """Fold `model_cost_map` (defaults to `litellm.model_cost`) into the per-provider model sets,
     then refresh `models_by_provider` from those sets so the additions reach wildcard expansion.
     The refresh updates the dict in place, so references captured before a reload stay live.
     """
     _populate_provider_model_sets(model_cost_map if model_cost_map is not None else model_cost)
+    _populate_custom_provider_model_sets(model_cost_map if model_cost_map is not None else model_cost)
     models_by_provider.update(_build_models_by_provider())
 
 
 _populate_provider_model_sets(model_cost)
+_populate_custom_provider_model_sets(model_cost)
 # known openai compatible endpoints - we'll eventually move this list to the model_prices_and_context_window.json dictionary
 
 # this is maintained for Exception Mapping
@@ -1148,6 +1199,17 @@ model_list_set = set(model_list)
 
 def _build_models_by_provider() -> dict:
     return {
+        "deerapi": deerapi_models,
+        "infiniai": infiniai_models,
+        "bltcy": bltcy_models,
+        "xiakexing": xiakexing_models,
+        "shubiaobiao": shubiaobiao_models,
+        "omnilink": omnilink_models,
+        "onerouter": onerouter_models,
+        "funcloud": funcloud_models,
+        "comflychat": comflychat_models,
+        "apimart": apimart_models,
+        "toapis": toapis_models,
         "openai": open_ai_chat_completion_models | open_ai_text_completion_models,
         "text-completion-openai": open_ai_text_completion_models,
         "cohere": cohere_models | cohere_chat_models,
@@ -1321,6 +1383,19 @@ from .utils import client
 
 from .llms.custom_llm import CustomLLM
 from .llms.anthropic.common_utils import AnthropicModelInfo
+from .llms.apimart.chat.transformation import ApiMartChatConfig as ApiMartChatConfig
+from .llms.bltcy.chat.transformation import BLTCYChatConfig as BLTCYChatConfig
+from .llms.comflychat.chat.transformation import ComflyChatChatConfig as ComflyChatChatConfig
+from .llms.deerapi.chat.transformation import DeerAPIChatConfig as DeerAPIChatConfig
+from .llms.deerapi_gemini.chat.transformation import DeerAPIGeminiConfig as DeerAPIGeminiConfig
+from .llms.funcloud.chat.transformation import FunCloudChatConfig as FunCloudChatConfig
+from .llms.infiniai.chat.transformation import InfiniAIChatConfig as InfiniAIChatConfig
+from .llms.ominilink_gemini.chat.transformation import OminiLinkGeminiConfig as OminiLinkGeminiConfig
+from .llms.toapis.chat.transformation import ToAPIsChatConfig as ToAPIsChatConfig
+from .llms.omnilink.chat.transformation import OmniLinkChatConfig as OmniLinkChatConfig
+from .llms.onerouter.chat.transformation import OneRouterChatConfig as OneRouterChatConfig
+from .llms.shubiaobiao.chat.transformation import ShuBiaoBiaoChatConfig as ShuBiaoBiaoChatConfig
+from .llms.xiakexing.chat.transformation import XiakeXingChatConfig as XiakeXingChatConfig
 from .llms.ai21.chat.transformation import AI21ChatConfig, AI21ChatConfig as AI21Config
 from .llms.deprecated_providers.palm import (
     PalmConfig,
@@ -1427,7 +1502,7 @@ from .assistants.main import *
 from .batches.main import *
 from .images.main import *
 from .videos.main import *
-from .batch_completion.main import *
+from .batch_completion.main import *  # pyright: ignore[reportGeneralTypeIssues]  # public modules reexport the same concurrent.futures constant
 from .rerank_api.main import *
 from .messages.dispatch import *
 from .responses.dispatch import *

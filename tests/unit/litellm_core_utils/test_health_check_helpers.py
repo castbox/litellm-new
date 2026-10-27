@@ -30,6 +30,27 @@ from litellm.types.utils import (
 )
 
 
+@pytest.mark.parametrize("mode", ("moderation", "moderations"))
+@pytest.mark.parametrize("prompt", (None, "health input"))
+async def test_moderation_health_check_uses_moderation_endpoint(mode, prompt, monkeypatch, respx_mock):
+    monkeypatch.setattr(litellm, "disable_aiohttp_transport", True)
+    route = respx_mock.post("https://moderation.test/v1/moderations").respond(
+        200,
+        json={
+            "id": "modr-health",
+            "model": "moderation-model",
+            "results": [{"flagged": False, "categories": {}, "category_scores": {}}],
+        },
+    )
+    result = await ahealth_check(
+        {"model": "openai/moderation-model", "api_key": "unit-key", "api_base": "https://moderation.test/v1"},
+        mode=mode,
+        prompt=prompt,
+    )
+    assert result == {}
+    assert json.loads(route.calls.last.request.content) == {"model": "moderation-model", "input": prompt or "test"}
+
+
 def _png_chunks(png: bytes, offset: int = 8) -> tuple[tuple[bytes, bytes], ...]:
     if offset >= len(png):
         return ()
@@ -914,6 +935,7 @@ async def test_ahealth_check_without_mode_reports_the_real_failure(
     assert "Missing `mode`" not in result["error"]
     assert "raw_request_typed_dict" in result
 
+
 def test_update_litellm_params_for_health_check():
     """
     Test if update_litellm_params_for_health_check correctly:
@@ -1095,6 +1117,7 @@ def test_update_litellm_params_for_health_check():
         updated_params["model"] == "converse/eu.anthropic.claude-3-sonnet-20240229-v1:0"
     )
 
+
 @pytest.mark.asyncio
 async def test_perform_health_check_filters_by_model_id():
     """
@@ -1140,6 +1163,7 @@ async def test_perform_health_check_filters_by_model_id():
     assert len(healthy_endpoints) == 1
     assert healthy_endpoints[0]["api_key"] == "fake-key-2"
 
+
 @pytest.mark.asyncio
 async def test_perform_health_check_skip_disabled_background_models():
     from litellm.proxy.health_check import perform_health_check
@@ -1178,6 +1202,7 @@ async def test_perform_health_check_skip_disabled_background_models():
     assert len(captured[0]) == 1
     assert captured[0][0]["model_name"] == "a"
 
+
 @pytest.mark.asyncio
 async def test_perform_health_check_with_health_check_model():
     """
@@ -1214,6 +1239,7 @@ async def test_perform_health_check_with_health_check_model():
         assert healthy_endpoints[0]["model"] == "openai/gpt-5-mini"
         assert len(healthy_endpoints) == 1
         assert len(unhealthy_endpoints) == 0
+
 
 @pytest.mark.asyncio
 async def test_image_generation_health_check_prompt(monkeypatch):

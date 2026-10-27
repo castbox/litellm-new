@@ -8311,6 +8311,8 @@ class Router:
             if status_code not in (401, 403):
                 raise error
 
+        if isinstance(error, litellm.APIResponseValidationError) and regular_fallbacks:
+            raise error
         if isinstance(error, litellm.NotFoundError):
             raise error
         # Error we should only retry if there are other deployments

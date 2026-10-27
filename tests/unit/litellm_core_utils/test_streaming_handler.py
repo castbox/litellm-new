@@ -9,6 +9,7 @@ import pytest
 import litellm
 from litellm import verbose_logger
 from litellm._logging import session_id_var, trace_id_var
+from litellm.exceptions import MidStreamFallbackError
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.litellm_core_utils.streaming_handler import (
     CustomStreamWrapper,
@@ -424,9 +425,7 @@ def test_strip_sse_data_from_chunk():
 
 @pytest.mark.parametrize("sync_mode", [True, False])
 @pytest.mark.asyncio
-async def test_streaming_handler_with_usage(
-    sync_mode: bool, final_usage_block: Optional[Usage] = None
-):
+async def test_streaming_handler_with_usage(sync_mode: bool, final_usage_block: Optional[Usage] = None):
     import time
 
     final_usage_block = final_usage_block or Usage(
@@ -492,12 +491,12 @@ async def test_streaming_handler_with_usage(
     if sync_mode:
         for chunk in response:
             if hasattr(chunk, "usage"):
-                assert chunk.usage == final_usage_block
+                assert chunk.usage == Usage(**{**final_usage_block.model_dump(), "cache_read_input_tokens": 1796})
             chunk_has_usage = True
     else:
         async for chunk in response:
             if hasattr(chunk, "usage"):
-                assert chunk.usage == final_usage_block
+                assert chunk.usage == Usage(**{**final_usage_block.model_dump(), "cache_read_input_tokens": 1796})
             chunk_has_usage = True
     assert chunk_has_usage
 
@@ -2212,12 +2211,7 @@ _REPETITION_TEST_CASES = [
     pytest.param(
         ["same"] * (litellm.REPEATED_STREAMING_CHUNK_LIMIT // 2 + 1)
         + ["different_mid"]
-        + ["same"]
-        * (
-            litellm.REPEATED_STREAMING_CHUNK_LIMIT
-            - litellm.REPEATED_STREAMING_CHUNK_LIMIT // 2
-            + 1
-        ),
+        + ["same"] * (litellm.REPEATED_STREAMING_CHUNK_LIMIT - litellm.REPEATED_STREAMING_CHUNK_LIMIT // 2 + 1),
         False,
         id="middle_chunk_different_no_raise",
     ),
@@ -2677,11 +2671,10 @@ def test_dispatch_cached_response_without_choices_is_an_empty_chunk(
 
 
 @pytest.mark.asyncio
-async def test_cached_response_without_choices_streams_a_single_stop_chunk(
+async def test_cached_response_without_choices_is_rejected(
     logging_obj: Logging,
 ):
-    """A stream cache hit on a completion stored with choices == [] ends with one
-    finish_reason=stop chunk, the same shape the live empty stream produced."""
+    """A cached result with no choices must enter the stream failure path."""
 
     async def cached_chunks():
         yield ModelResponseStream(id="chatcmpl-cache-empty", choices=[])
@@ -2693,11 +2686,8 @@ async def test_cached_response_without_choices_streams_a_single_stop_chunk(
         custom_llm_provider="cached_response",
     )
 
-    chunks: Final = tuple([chunk async for chunk in wrapper])
-
-    assert len(chunks) == 1
-    assert tuple(choice.finish_reason for chunk in chunks for choice in chunk.choices) == ("stop",)
-    assert all(choice.delta.content in (None, "") for chunk in chunks for choice in chunk.choices)
+    with pytest.raises(MidStreamFallbackError, match="empty completion response"):
+        _ = [chunk async for chunk in wrapper]
 
 
 def test_dispatch_vertex_ai_legacy_text_and_finish_reason(
@@ -3684,7 +3674,7 @@ def test_record_partial_usage_for_failure_keeps_cache_values_recovered_from_chun
 
 @pytest.mark.parametrize("sync_mode", [True, False])
 @pytest.mark.asyncio
-async def test_stream_chunk_builder_raise_at_end_of_stream_still_recovers_usage(
+async def test_stream_chunk_builder_failure_preserves_billable_usage(
     sync_mode,
 ):
     """stream_chunk_builder re-raises (as APIError) on large agentic tool-use
@@ -3692,9 +3682,7 @@ async def test_stream_chunk_builder_raise_at_end_of_stream_still_recovers_usage(
     before the fix it escaped __next__/__anext__ and the request was dropped from
     SpendLogs while the provider billed the tokens. The wrapper must catch it and
     recover usage from the raw chunks so cost is still tracked."""
-    final_usage_block = Usage(
-        completion_tokens=392, prompt_tokens=1799, total_tokens=2191
-    )
+    final_usage_block = Usage(completion_tokens=392, prompt_tokens=1799, total_tokens=2191)
     final_chunk = ModelResponseStream(
         id="chatcmpl-raise-test",
         created=1742056047,
@@ -3709,7 +3697,7 @@ async def test_stream_chunk_builder_raise_at_end_of_stream_still_recovers_usage(
         ],
         usage=final_usage_block,
     )
-    test_chunks = bedrock_chunks + [final_chunk]
+    test_chunks = [bedrock_chunks[0].model_copy(update={"usage": final_usage_block}), *bedrock_chunks[1:], final_chunk]
 
     logging_obj = Logging(
         model="bedrock/claude-haiku-4-5-20251001-v1:0",
@@ -3729,35 +3717,23 @@ async def test_stream_chunk_builder_raise_at_end_of_stream_still_recovers_usage(
         stream_options={"include_usage": True},
     )
 
-    seen_usage = []
-    with patch.object(
-        litellm,
-        "stream_chunk_builder",
-        side_effect=Exception("simulated assembly failure"),
-    ):
-        # before the fix this raised and dropped the request; it must not raise now
+    with patch.object(litellm, "stream_chunk_builder", side_effect=Exception("simulated assembly failure")):
         if sync_mode:
-            for chunk in response:
-                if getattr(chunk, "usage", None) is not None:
-                    seen_usage.append(chunk.usage)
+            with pytest.raises(MidStreamFallbackError, match="assembly failure"):
+                _ = list(response)
         else:
-            async for chunk in response:
-                if getattr(chunk, "usage", None) is not None:
-                    seen_usage.append(chunk.usage)
-
-    assert any(
-        u.total_tokens == final_usage_block.total_tokens for u in seen_usage
-    ), "usage recovered from raw chunks was not emitted after stream_chunk_builder raised"
+            with pytest.raises(MidStreamFallbackError, match="assembly failure"):
+                _ = [chunk async for chunk in response]
+    usage = logging_obj.model_call_details["combined_usage_object"]
+    assert (usage.prompt_tokens, usage.completion_tokens, usage.total_tokens) == (1799, 392, 2191)
 
 
 @pytest.mark.parametrize("sync_mode", [True, False])
 @pytest.mark.asyncio
-async def test_stream_chunk_builder_raise_and_usage_recovery_failure_does_not_crash(
+async def test_stream_chunk_builder_and_usage_recovery_failure_is_reported(
     sync_mode,
 ):
-    """If end-of-stream assembly raises AND best-effort usage recovery from the raw
-    chunks also fails, the stream must still complete cleanly rather than propagate
-    the exception to the consumer."""
+    """A failed usage recovery must preserve the original stream assembly error."""
     from litellm.litellm_core_utils import streaming_handler as sh_module
 
     final_chunk = ModelResponseStream(
@@ -3776,9 +3752,7 @@ async def test_stream_chunk_builder_raise_and_usage_recovery_failure_does_not_cr
     )
 
     response = CustomStreamWrapper(
-        completion_stream=ModelResponseListIterator(
-            model_responses=bedrock_chunks + [final_chunk]
-        ),
+        completion_stream=ModelResponseListIterator(model_responses=bedrock_chunks + [final_chunk]),
         model="bedrock/claude-haiku-4-5-20251001-v1:0",
         custom_llm_provider="bedrock",
         logging_obj=Logging(
@@ -3794,20 +3768,15 @@ async def test_stream_chunk_builder_raise_and_usage_recovery_failure_does_not_cr
     )
 
     with (
-        patch.object(
-            litellm, "stream_chunk_builder", side_effect=Exception("assembly failed")
-        ),
-        patch.object(
-            sh_module, "calculate_total_usage", side_effect=Exception("recovery failed")
-        ),
+        patch.object(litellm, "stream_chunk_builder", side_effect=Exception("assembly failed")),
+        patch.object(sh_module, "calculate_total_usage", side_effect=Exception("recovery failed")),
     ):
-        # must not raise even though both assembly and recovery fail
         if sync_mode:
-            chunks = [c for c in response]
+            with pytest.raises(MidStreamFallbackError, match="assembly failed"):
+                _ = list(response)
         else:
-            chunks = [c async for c in response]
-
-    assert len(chunks) > 0
+            with pytest.raises(MidStreamFallbackError, match="assembly failed"):
+                _ = [chunk async for chunk in response]
 
 
 class TransportErrorAfterChunksIterator:
@@ -4323,19 +4292,20 @@ def test_stream_wrapper_next_keeps_context_active_through_synthesized_finish_rea
             messages=[{"role": "user", "content": "hi"}],
             stream=True,
             call_type="completion",
-            start_time=None,
+            start_time=time.time(),
             litellm_call_id="finish-reason-call",
             function_id="fn-finish-reason",
             kwargs={"litellm_session_id": "finish-reason-session"},
         )
         wrapper = CustomStreamWrapper(
-            completion_stream=iter([]),
+            completion_stream=iter([_make_chunk("hello")]),
             model="gpt-3.5-turbo",
             logging_obj=log_obj,
         )
         assert trace_id_var.get() == log_obj.litellm_trace_id
         assert session_id_var.get() == "finish-reason-session"
 
+        assert next(wrapper).choices[0].delta.content == "hello"
         chunk = next(wrapper)
 
         assert chunk.choices[0].finish_reason is not None
@@ -4369,17 +4339,18 @@ def test_stream_wrapper_del_cleans_up_after_synthesized_finish_reason_chunk(monk
             messages=[{"role": "user", "content": "hi"}],
             stream=True,
             call_type="completion",
-            start_time=None,
+            start_time=time.time(),
             litellm_call_id="finish-reason-del-call",
             function_id="fn-finish-reason-del",
             kwargs={"litellm_session_id": "finish-reason-del-session"},
         )
         wrapper = CustomStreamWrapper(
-            completion_stream=iter([]),
+            completion_stream=iter([_make_chunk("hello")]),
             model="gpt-3.5-turbo",
             logging_obj=log_obj,
         )
 
+        assert next(wrapper).choices[0].delta.content == "hello"
         chunk = next(wrapper)
         assert chunk.choices[0].finish_reason is not None
 
@@ -4406,15 +4377,14 @@ async def test_stream_wrapper_anext_keeps_context_active_through_synthesized_fin
             messages=[{"role": "user", "content": "hi"}],
             stream=True,
             call_type="completion",
-            start_time=None,
+            start_time=time.time(),
             litellm_call_id="anext-finish-reason-call",
             function_id="fn-anext-finish-reason",
             kwargs={"litellm_session_id": "anext-finish-reason-session"},
         )
 
         async def _empty_aiter():
-            return
-            yield  # pragma: no cover - makes this an async generator
+            yield _make_chunk("hello")
 
         wrapper = CustomStreamWrapper(
             completion_stream=_empty_aiter(),
@@ -4424,6 +4394,7 @@ async def test_stream_wrapper_anext_keeps_context_active_through_synthesized_fin
         assert trace_id_var.get() == log_obj.litellm_trace_id
         assert session_id_var.get() == "anext-finish-reason-session"
 
+        assert (await wrapper.__anext__()).choices[0].delta.content == "hello"
         chunk = await wrapper.__anext__()
 
         assert chunk.choices[0].finish_reason is not None
@@ -5290,9 +5261,7 @@ def test_unit_test_custom_stream_wrapper():
     "chunk_value, expected_chunk_fail",
     [("How are you?", True), ("{", False), ("", False), (None, False)],
 )
-def test_unit_test_custom_stream_wrapper_repeating_chunk(
-    loop_amount, chunk_value, expected_chunk_fail
-):
+def test_unit_test_custom_stream_wrapper_repeating_chunk(loop_amount, chunk_value, expected_chunk_fail):
     """
     Test if InternalServerError raised if model enters infinite loop
 
@@ -5333,14 +5302,13 @@ def test_unit_test_custom_stream_wrapper_repeating_chunk(
 
     print(f"expected_chunk_fail: {expected_chunk_fail}")
 
-    if (loop_amount > litellm.REPEATED_STREAMING_CHUNK_LIMIT) and expected_chunk_fail:
+    if not chunk_value or ((loop_amount > litellm.REPEATED_STREAMING_CHUNK_LIMIT) and expected_chunk_fail):
+
         def _drain():
             for chunk in response:
                 continue
 
-        with pytest.raises(
-            (litellm.InternalServerError, litellm.exceptions.MidStreamFallbackError)
-        ):
+        with pytest.raises((litellm.InternalServerError, litellm.exceptions.MidStreamFallbackError)):
             _drain()
     else:
         for chunk in response:
@@ -5437,7 +5405,7 @@ def test_unit_test_custom_stream_wrapper_openai():
         "choices": [
             litellm.utils.StreamingChoices(
                 delta=litellm.utils.Delta(
-                    content=None, function_call=None, role=None, tool_calls=None
+                    content=None, refusal="Content blocked", function_call=None, role=None, tool_calls=None
                 ),
                 finish_reason="content_filter",
                 index=0,
@@ -5754,7 +5722,8 @@ def test_unit_test_custom_stream_wrapper_function_call():
         "role": "assistant",
         "tool_calls": [
             {
-                "function": {"arguments": '"}'},
+                "id": "call-unit",
+                "function": {"name": "lookup", "arguments": '"}'},
                 "type": "function",
                 "index": 0,
             }
@@ -6249,7 +6218,6 @@ async def test_logged_response_keeps_finish_reason_from_last_content_chunk(
         assert logged.choices[0].message.content == "Hello, this reply is cut off"
 
 
-
 @pytest.mark.parametrize("sync_mode", [True, False])
 @pytest.mark.asyncio
 async def test_no_synthetic_finish_reason_logged_when_provider_sent_none(sync_mode: bool, logging_obj: Logging):
@@ -6417,3 +6385,73 @@ def validate_last_format(chunk):
         assert isinstance(
             choice["finish_reason"], str
         ), "'finish_reason' should be a string."
+
+
+@pytest.mark.parametrize("is_async", (False, True))
+@pytest.mark.parametrize("with_finish", (False, True))
+async def test_empty_chat_stream_raises_before_a_successful_finish(is_async, with_finish, logging_obj):
+    source = [ModelResponseStream(model="unit-model", choices=[StreamingChoices(delta=Delta(role="assistant"))])]
+    if with_finish:
+        source.append(ModelResponseStream(model="unit-model", choices=[StreamingChoices(delta=Delta(), finish_reason="stop")]))
+    wrapper = CustomStreamWrapper(
+        completion_stream=ModelResponseListIterator(model_responses=source),
+        model="unit-model", custom_llm_provider="openai", logging_obj=logging_obj,
+    )
+
+    if is_async:
+        with pytest.raises(MidStreamFallbackError, match="empty completion response"):
+            _ = [chunk async for chunk in wrapper]
+    else:
+        with pytest.raises(MidStreamFallbackError, match="empty completion response"):
+            _ = list(wrapper)
+
+
+@pytest.mark.parametrize("is_async", (False, True))
+async def test_complete_tool_stream_validation_keeps_original_argument_fragments(is_async, logging_obj):
+    source = [
+        ModelResponseStream(model="unit-model", choices=[StreamingChoices(delta=Delta(role="assistant", tool_calls=[
+            {"index": 0, "id": "call-unit", "type": "function", "function": {"name": "lookup", "arguments": '{"id":'}}
+        ]))]),
+        ModelResponseStream(model="unit-model", choices=[StreamingChoices(delta=Delta(tool_calls=[
+            {"index": 0, "function": {"arguments": '7}'}}
+        ]))]),
+        ModelResponseStream(model="unit-model", choices=[StreamingChoices(delta=Delta(), finish_reason="tool_calls")]),
+    ]
+    original_fragments = [chunk.model_dump() for chunk in source]
+    wrapper = CustomStreamWrapper(
+        completion_stream=ModelResponseListIterator(model_responses=source),
+        model="unit-model", custom_llm_provider="openai", logging_obj=logging_obj,
+    )
+
+    received = [chunk async for chunk in wrapper] if is_async else list(wrapper)
+
+    assert [chunk.model_dump() for chunk in source] == original_fragments
+    arguments = "".join(call.function.arguments or "" for chunk in received for choice in chunk.choices for call in (choice.delta.tool_calls or []))
+    assert json.loads(arguments) == {"id": 7}
+    assert any(choice.finish_reason == "tool_calls" for chunk in received for choice in chunk.choices)
+
+
+@pytest.mark.parametrize("as_model", (False, True))
+def test_calculate_total_usage_keeps_extra_fields_and_zero_values(as_model):
+    from litellm.litellm_core_utils.streaming_handler import calculate_total_usage
+
+    first_usage = Usage(
+        prompt_tokens=10, completion_tokens=4, total_tokens=14,
+        prompt_tokens_details=PromptTokensDetailsWrapper(cached_tokens=3),
+        completion_tokens_details=CompletionTokensDetailsWrapper(reasoning_tokens=2, text_tokens=2),
+        provider_units=0, cost=0.25,
+    )
+    last_usage = Usage(prompt_tokens=10, completion_tokens=4, total_tokens=14, cost=0, provider_units=None)
+    chunks = [
+        {"usage": first_usage if as_model else first_usage.model_dump()},
+        {"usage": last_usage if as_model else last_usage.model_dump()},
+    ]
+
+    result = calculate_total_usage(chunks)
+
+    assert (result.prompt_tokens, result.completion_tokens, result.total_tokens) == (10, 4, 14)
+    assert result.model_dump()["provider_units"] == 0
+    assert result.model_dump()["cost"] == 0
+    assert result.prompt_tokens_details.cached_tokens == 3
+    assert result.completion_tokens_details.reasoning_tokens == 2
+    assert result.completion_tokens_details.text_tokens == 2

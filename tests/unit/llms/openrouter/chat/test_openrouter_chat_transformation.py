@@ -1,6 +1,6 @@
-
 import httpx
 import pytest
+from litellm.utils import get_optional_params
 
 
 from litellm.llms.openai.chat.gpt_transformation import OpenAIGPTConfig
@@ -9,6 +9,22 @@ from litellm.llms.openrouter.chat.transformation import (
     OpenrouterConfig,
     OpenRouterException,
 )
+
+
+@pytest.mark.parametrize("explicit_options", [None, {}, {"include_usage": False}, {"include_usage": True}])
+def test_stream_usage_defaults_preserve_explicit_options(explicit_options):
+    params = get_optional_params(
+        model="vendor/model",
+        custom_llm_provider="openrouter",
+        stream=True,
+        **({} if explicit_options is None else {"stream_options": explicit_options}),
+    )
+    assert params["stream_options"] == ({"include_usage": True} if explicit_options is None else explicit_options)
+
+
+def test_nonstream_request_does_not_enable_stream_usage():
+    params = get_optional_params(model="vendor/model", custom_llm_provider="openrouter")
+    assert "stream_options" not in params
 
 
 class TestOpenRouterChatCompletionStreamingHandler:

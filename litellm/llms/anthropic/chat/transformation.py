@@ -6,7 +6,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar, Final, NoReturn, cast
 
 import httpx
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, TypeAdapter, ValidationError
 from typing_extensions import ReadOnly, TypedDict
 
 import litellm
@@ -2069,7 +2069,10 @@ class AnthropicConfig(AnthropicModelInfo, BaseConfig):
             anthropic_messages = anthropic_messages_pt(
                 model=model,
                 messages=list(conversation),
-                llm_provider=self._resolved_provider,
+                llm_provider=TypeAdapter(str).validate_python(
+                    TypeAdapter(Mapping[str, object]).validate_python(litellm_params or {}).get("custom_llm_provider")
+                    or self._resolved_provider
+                ),
             )
         except Exception as e:
             raise AnthropicError(

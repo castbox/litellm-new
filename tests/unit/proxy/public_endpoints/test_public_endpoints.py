@@ -1049,6 +1049,15 @@ def test_get_supported_endpoints_chat_completions_present(reset_endpoints_cache)
     assert len(chat["providers"]) > 0
 
 
+@pytest.mark.parametrize("endpoint_key", ("chat_completions", "responses"))
+def test_supported_endpoints_keeps_apigo_chat_and_responses(endpoint_key, reset_endpoints_cache):
+    response = _make_client().get("/public/endpoints")
+
+    assert response.status_code == 200
+    endpoint = next(item for item in response.json()["endpoints"] if item["key"] == endpoint_key)
+    assert {"slug": "apigo", "display_name": "ApiGo"} in endpoint["providers"]
+
+
 def test_get_supported_endpoints_display_names_have_no_slug_suffix(
     reset_endpoints_cache,
 ):

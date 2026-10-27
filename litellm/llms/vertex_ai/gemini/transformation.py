@@ -566,8 +566,12 @@ def _process_gemini_media(
             part = {"file_data": file_data}
             return _apply_gemini_metadata(part, model, media_resolution_enum, video_metadata)
         elif "https://" in image_url and (image_type := format or get_image_mime_type_from_url(image_url)) is not None:
-            file_data = FileDataType(mime_type=image_type, file_uri=image_url)
-            part = {"file_data": file_data}
+            if image_type.startswith("image/"):
+                image = convert_to_anthropic_image_obj(image_url, format=format)
+                part = {"inline_data": cast(BlobType, {"data": image["data"], "mime_type": image["media_type"]})}
+            else:
+                file_data = FileDataType(mime_type=image_type, file_uri=image_url)
+                part = {"file_data": file_data}
             return _apply_gemini_metadata(part, model, media_resolution_enum, video_metadata)
         elif "http://" in image_url or "https://" in image_url or "base64" in image_url:
             image: Final = convert_to_anthropic_image_obj(image_url, format=format)
@@ -1306,9 +1310,8 @@ def _ai_studio_inlines(media: RemoteMedia) -> bool:
 def _vertex_inlines(media: RemoteMedia) -> bool:
     if media.url.startswith(GEMINI_FILES_API_URI_PREFIX):
         return False
-    return media.url.startswith("http://") or (
-        _explicit_mime_type(media.fields) is None and get_image_mime_type_from_url(media.url) is None
-    )
+    mime_type: Final = _explicit_mime_type(media.fields) or get_image_mime_type_from_url(media.url)
+    return media.url.startswith("http://") or mime_type is None or mime_type.startswith("image/")
 
 
 def should_inline_remote_media(custom_llm_provider: str) -> Callable[[RemoteMedia], bool]:

@@ -247,6 +247,7 @@ LLM_CONFIG_NAMES: Final = (
     "VoyageMultimodalEmbeddingConfig",
     "InfinityEmbeddingConfig",
     "PerplexityEmbeddingConfig",
+    "AzureOpenAIV1Config",
     "AzureAIStudioConfig",
     "MistralConfig",
     "OpenAIResponsesAPIConfig",
@@ -999,6 +1000,10 @@ _LLM_CONFIGS_IMPORT_MAP: Final = {
     "PerplexityEmbeddingConfig": (
         ".llms.perplexity.embedding.transformation",
         "PerplexityEmbeddingConfig",
+    ),
+    "AzureOpenAIV1Config": (
+        ".llms.azure_openai_v1.chat.transformation",
+        "AzureOpenAIV1Config",
     ),
     "AzureAIStudioConfig": (
         ".llms.azure_ai.chat.transformation",

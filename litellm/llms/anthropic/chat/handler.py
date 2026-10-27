@@ -9,6 +9,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final, Literal, Union, cast
 
 import httpx
+from pydantic import TypeAdapter
 
 import litellm
 import litellm.litellm_core_utils
@@ -245,7 +246,10 @@ class AnthropicChatCompletion(BaseLLM):
         streamwrapper: Final = CustomStreamWrapper(
             completion_stream=completion_stream,
             model=model,
-            custom_llm_provider="anthropic",
+            custom_llm_provider=TypeAdapter(str).validate_python(
+                TypeAdapter(Mapping[str, object]).validate_python(litellm_params or {}).get("custom_llm_provider")
+                or "anthropic"
+            ),
             logging_obj=logging_obj,
             _response_headers=process_anthropic_headers(headers),
         )
@@ -350,14 +354,18 @@ class AnthropicChatCompletion(BaseLLM):
         optional_params.pop("vertex_count_tokens_location", None)
         _is_function_call: Final = False
         messages = copy.deepcopy(messages)
-        headers = AnthropicConfig().validate_environment(
-            api_key=api_key,
-            headers=headers,
-            model=model,
-            messages=messages,
-            optional_params={**optional_params, "is_vertex_request": is_vertex_request},
-            litellm_params=litellm_params,
-            api_base=api_base,
+        prepared_headers: Final = TypeAdapter(dict[str, str]).validate_python(
+            {"content-type": "application/json", "accept": "application/json", **headers}
+            if custom_llm_provider in {"funcloud_claude", "deerapi_claude"}
+            else AnthropicConfig().validate_environment(
+                api_key=api_key,
+                headers=headers,
+                model=model,
+                messages=messages,
+                optional_params={**optional_params, "is_vertex_request": is_vertex_request},
+                litellm_params=litellm_params,
+                api_base=api_base,
+            )
         )
 
         config: Final = ProviderConfigManager.get_provider_chat_config(
@@ -376,7 +384,7 @@ class AnthropicChatCompletion(BaseLLM):
             place (`data["stream"] = True`) before sending.
             """
             request_headers, data = update_request_with_filtered_beta(
-                headers=headers,
+                headers=prepared_headers,
                 request_data=request_data,
                 provider=custom_llm_provider,
             )
@@ -400,7 +408,7 @@ class AnthropicChatCompletion(BaseLLM):
                     messages=messages,
                     optional_params=transform_params,
                     litellm_params=litellm_params,
-                    headers=headers,
+                    headers=prepared_headers,
                 )
             )
             if (
@@ -461,7 +469,7 @@ class AnthropicChatCompletion(BaseLLM):
                     messages=messages,
                     optional_params=transform_params,
                     litellm_params=litellm_params,
-                    headers=headers,
+                    headers=prepared_headers,
                 )
             )
             ## COMPLETION CALL
@@ -489,7 +497,7 @@ class AnthropicChatCompletion(BaseLLM):
                 return CustomStreamWrapper(
                     completion_stream=completion_stream,
                     model=model,
-                    custom_llm_provider="anthropic",
+                    custom_llm_provider=custom_llm_provider,
                     logging_obj=logging_obj,
                     _response_headers=process_anthropic_headers(headers),
                 )

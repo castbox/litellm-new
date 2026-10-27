@@ -447,6 +447,7 @@ class ModelInfoBase(ProviderSpecificModelInfo, total=False):
             "chat",
             "audio_transcription",
             "audio_speech",
+            "moderation",
             "responses",
             "decisions",
             "evaluation",
@@ -4165,6 +4166,7 @@ class LlmProviders(str, Enum):
     BASETEN = "baseten"
     BLACK_FOREST_LABS = "black_forest_labs"
     AZURE = "azure"
+    AZURE_OPENAI_V1 = "azure_openai_v1"
     AZURE_TEXT = "azure_text"
     AZURE_AI = "azure_ai"
     SAGEMAKER = "sagemaker"
@@ -4207,6 +4209,21 @@ class LlmProviders(str, Enum):
     INCEPTION = "inception"
     TEXT_COMPLETION_INCEPTION = "text-completion-inception"
     DEEPSEEK = "deepseek"
+    DEERAPI = "deerapi"
+    DEERAPI_GEMINI = "deerapi_gemini"
+    DEERAPI_CLAUDE = "deerapi_claude"
+    INFINIAI = "infiniai"
+    BLTCY = "bltcy"
+    XIAKEXING = "xiakexing"
+    SHUBIAOBIAO = "shubiaobiao"
+    OMNILINK = "omnilink"
+    OMINILINK_GEMINI = "ominilink_gemini"
+    ONEROUTER = "onerouter"
+    FUNCLOUD = "funcloud"
+    FUNCLOUD_CLAUDE = "funcloud_claude"
+    COMFLYCHAT = "comflychat"
+    APIMART = "apimart"
+    TOAPIS = "toapis"
     SAMBANOVA = "sambanova"
     MARITALK = "maritalk"
     VOYAGE = "voyage"
@@ -4244,6 +4261,7 @@ class LlmProviders(str, Enum):
     SAP_GENERATIVE_AI_HUB = "sap"
     ASSEMBLYAI = "assemblyai"
     AZURE_SPEECH = "azure_speech"
+    APIGO = "apigo"
     CHARITY_ENGINE = "charity_engine"
     GITHUB_COPILOT = "github_copilot"
     SNOWFLAKE = "snowflake"

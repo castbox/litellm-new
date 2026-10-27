@@ -186,6 +186,10 @@ def get_supported_openai_params(
             return litellm.DatabricksEmbeddingConfig().get_supported_openai_params()
     elif custom_llm_provider == "palm" or custom_llm_provider == "gemini":
         return litellm.GoogleAIStudioGeminiConfig().get_supported_openai_params(model=model)
+    elif custom_llm_provider == "deerapi_gemini":
+        return litellm.DeerAPIGeminiConfig().get_supported_openai_params(model=model)
+    elif custom_llm_provider == "ominilink_gemini":
+        return litellm.OminiLinkGeminiConfig().get_supported_openai_params(model=model)
     elif custom_llm_provider == "novita":
         return litellm.NovitaConfig().get_supported_openai_params(model=model)
     elif custom_llm_provider == "vertex_ai" or custom_llm_provider == "vertex_ai_beta":

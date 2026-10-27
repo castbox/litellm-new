@@ -16125,7 +16125,7 @@ async def model_info_v2(
         )
     else:
         # Normal flow when modelId is not provided
-        all_models = copy.deepcopy(llm_router.model_list)
+        all_models = copy.deepcopy(llm_router.get_model_list() or [])
 
         if user_model is not None:
             # if user does not use a config.yaml, https://github.com/BerriAI/litellm/issues/2061

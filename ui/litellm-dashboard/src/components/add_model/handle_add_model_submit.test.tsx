@@ -6,6 +6,28 @@ vi.mock("../networking", () => ({
 }));
 
 describe("prepareModelAddRequest", () => {
+  it.each([
+    { vectorStoreIds: [], expected: { model: "openai/test-model" } },
+    { vectorStoreIds: ["vs-knowledge"], expected: { model: "openai/test-model", vector_store_ids: ["vs-knowledge"] } },
+  ])("should submit only configured vector stores: $vectorStoreIds", async ({ vectorStoreIds, expected }) => {
+    const deployments = await prepareModelAddRequest(
+      {
+        model_mappings: [{ public_name: "public-model", litellm_model: "openai/test-model" }],
+        vector_store_ids: vectorStoreIds,
+      },
+      "token",
+      null,
+    );
+
+    expect(deployments).toEqual([
+      {
+        modelName: "public-model",
+        litellmParamsObj: expected,
+        modelInfoObj: {},
+      },
+    ]);
+  });
+
   it("returns deployment data for the most basic form", async () => {
     const formValues = {
       model_mappings: [

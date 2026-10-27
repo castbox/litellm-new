@@ -281,6 +281,19 @@ class TestResponseAPILoggingUtils:
         # Assert
         assert result is False
 
+    def test_chat_usage_with_responses_aliases_keeps_chat_counts_and_details(self):
+        usage = {
+            "prompt_tokens": 10, "completion_tokens": 4, "total_tokens": 14,
+            "input_tokens": 100, "output_tokens": 40,
+            "prompt_tokens_details": {"cached_tokens": 3}, "provider_units": 0,
+        }
+
+        result = ResponseAPILoggingUtils.transform_response_api_usage_to_chat_usage(usage)
+
+        assert (result.prompt_tokens, result.completion_tokens, result.total_tokens) == (10, 4, 14)
+        assert result.prompt_tokens_details.cached_tokens == 3
+        assert result.model_dump()["provider_units"] == 0
+
     def test_transform_response_api_usage_to_chat_usage(self):
         """Test transformation from Response API usage to Chat usage format"""
         # Setup

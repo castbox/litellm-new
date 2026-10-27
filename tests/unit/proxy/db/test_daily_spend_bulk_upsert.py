@@ -18,9 +18,23 @@ from litellm.proxy.db.rollup_lock_timeout import ROLLUP_LOCK_TIMEOUT_SQL
 TAG_TABLE = DAILY_SPEND_TABLES["tag"]
 USER_TABLE = DAILY_SPEND_TABLES["user"]
 
+
+@pytest.mark.parametrize("table", tuple(DAILY_SPEND_TABLES.values()), ids=tuple(DAILY_SPEND_TABLES))
+def test_public_model_names_remain_separate_in_each_daily_rollup(table):
+    rows = tuple(
+        {**tag_txn(), table.entity_id_column: "entity", "model_group": name, "spend": spend}
+        for name, spend in (("public-a", 0.25), ("public-b", 0.75), ("public-a", 0.5))
+    )
+    merged = merge_by_conflict_key(table, rows)
+    assert [(row["model_group"], row["spend"], row["api_requests"]) for _, row in merged] == [
+        ("public-a", 0.75, 2),
+        ("public-b", 0.75, 1),
+    ]
+
+
 # Every nullable member of the unique constraint, so a test that only varied the provider
 # cannot pass while a sibling column still leaks a NULL into the conflict target.
-NULLABLE_KEY_COLUMNS = ("model", "custom_llm_provider", "mcp_namespaced_tool_name", "endpoint")
+NULLABLE_KEY_COLUMNS = ("model", "model_group", "custom_llm_provider", "mcp_namespaced_tool_name", "endpoint")
 
 
 def tag_txn(**overrides):
@@ -101,7 +115,7 @@ def test_conflict_target_is_the_full_unique_constraint():
     conflict_target = re.search(r"ON CONFLICT \(([^)]*)\)", sql)
     assert conflict_target is not None
     assert conflict_target.group(1) == (
-        '"tag", "date", "api_key", "model", "custom_llm_provider", "mcp_namespaced_tool_name", "endpoint"'
+        '"tag", "date", "api_key", "model", "model_group", "custom_llm_provider", "mcp_namespaced_tool_name", "endpoint"'
     )
 
 

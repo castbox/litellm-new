@@ -203,6 +203,8 @@ class HealthCheckHelpers:
             "chat",
             "completion",
             "embedding",
+            "moderation",
+            "moderations",
             "audio_speech",
             "audio_transcription",
             "image_generation",
@@ -251,6 +253,14 @@ class HealthCheckHelpers:
             "embedding": lambda: litellm.aembedding(
                 **_filter_model_params(model_params=model_params),
                 input=input or ["test"],
+            ),
+            "moderation": lambda: litellm.amoderation(
+                **_filter_model_params(model_params=model_params),
+                input=prompt or "test",
+            ),
+            "moderations": lambda: litellm.amoderation(
+                **_filter_model_params(model_params=model_params),
+                input=prompt or "test",
             ),
             "audio_speech": lambda: litellm.aspeech(
                 **{

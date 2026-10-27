@@ -70,6 +70,8 @@ class OpenrouterConfig(OpenAIGPTConfig):
         if route is not None:
             extra_body["route"] = route
         mapped_openai_params["extra_body"] = extra_body  # openai client supports `extra_body` param
+        if non_default_params.get("stream") and "stream_options" not in non_default_params:
+            mapped_openai_params["stream_options"] = {"include_usage": True}
         return mapped_openai_params
 
     def _supports_cache_control_in_content(self, model: str) -> bool:

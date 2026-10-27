@@ -1528,7 +1528,7 @@ async def test_add_spend_log_transaction_to_daily_org_transaction_injects_org_id
     update_dict = call_args["update"]
     assert len(update_dict) == 1
     for key, transaction in update_dict.items():
-        assert key == f"{org_id}_2024-01-01_test-key_gpt-4_openai_"
+        assert json.loads(key) == [org_id, "2024-01-01", "test-key", "gpt-4", "gpt-4-group", "openai", "", ""]
         assert transaction["organization_id"] == org_id
         assert transaction["date"] == "2024-01-01"
         assert transaction["api_key"] == "test-key"
@@ -1605,7 +1605,7 @@ async def test_add_spend_log_transaction_to_daily_end_user_transaction_injects_e
     update_dict = call_args["update"]
     assert len(update_dict) == 1
     for key, transaction in update_dict.items():
-        assert key == f"{end_user_id}_2024-01-01_test-key_gpt-4_openai_"
+        assert json.loads(key) == [end_user_id, "2024-01-01", "test-key", "gpt-4", "gpt-4-group", "openai", "", ""]
         assert transaction["end_user_id"] == end_user_id
         assert transaction["date"] == "2024-01-01"
         assert transaction["api_key"] == "test-key"
@@ -1681,7 +1681,7 @@ async def test_add_spend_log_transaction_to_daily_agent_transaction_injects_agen
     update_dict = call_args["update"]
     assert len(update_dict) == 1
     for key, transaction in update_dict.items():
-        assert key == f"{agent_id}_2024-01-01_test-key_gpt-4_openai_"
+        assert json.loads(key) == [agent_id, "2024-01-01", "test-key", "gpt-4", "gpt-4-group", "openai", "", ""]
         assert transaction["agent_id"] == agent_id
         assert transaction["date"] == "2024-01-01"
         assert transaction["api_key"] == "test-key"
@@ -1796,7 +1796,7 @@ async def test_endpoint_field_is_correctly_mapped_from_call_type():
 
     for key, transaction in update_dict.items():
         # Verify endpoint is included in the key
-        assert key == "test-user_2024-01-01_test-key_gpt-4_openai_/chat/completions"
+        assert json.loads(key) == ["test-user", "2024-01-01", "test-key", "gpt-4", "gpt-4-group", "openai", "", "/chat/completions"]
 
         # Verify endpoint is set in the transaction
         assert transaction["endpoint"] == "/chat/completions"
@@ -1842,7 +1842,7 @@ async def test_endpoint_field_maps_retrieve_batch_spend_row_to_batches_endpoint(
     assert len(update_dict) == 1
 
     for key, transaction in update_dict.items():
-        assert key == "test-user_2024-01-01_test-key_gpt-4_openai_/batches"
+        assert json.loads(key) == ["test-user", "2024-01-01", "test-key", "gpt-4", "gpt-4-group", "openai", "", "/batches"]
         assert transaction["endpoint"] == "/batches"
 
 
@@ -5144,3 +5144,45 @@ async def test_daily_spend_rows_survive_a_lock_timeout_for_the_next_flush():
 
     assert len(prisma_client.db.statements) == 1
     assert list(daily_spend_transactions) == ["key"]
+
+
+@pytest.mark.parametrize("entity", ("user", "team", "org", "end_user", "agent", "tag"))
+async def test_daily_queue_separates_public_model_and_endpoint_dimensions(entity):
+    from litellm.proxy.utils import PrismaClient
+
+    writer = DBSpendUpdateWriter()
+    prisma_client = PrismaClient.__new__(PrismaClient)
+    method = getattr(writer, f"add_spend_log_transaction_to_daily_{entity}_transaction")
+    queue = getattr(writer, "daily_spend_update_queue" if entity == "user" else f"daily_{entity}_spend_update_queue")
+    for model_group, call_type in (
+        ("public-a", "acompletion"),
+        ("public-b", "acompletion"),
+        ("public-a", "acompletion"),
+        ("public-a", "aresponses"),
+    ):
+        payload = {
+            "startTime": "2026-10-01T00:00:00+00:00",
+            "api_key": "hash",
+            "model": "same-backend",
+            "model_group": model_group,
+            "custom_llm_provider": "openai",
+            "metadata": "{}",
+            "prompt_tokens": 10,
+            "completion_tokens": 5,
+            "spend": 1.25,
+            "call_type": call_type,
+            "user": "entity",
+            "team_id": "entity",
+            "organization_id": "entity",
+            "end_user": "entity",
+            "agent_id": "entity",
+            "request_tags": ["entity"],
+            "request_id": "request",
+        }
+        await method(payload=payload, prisma_client=prisma_client, **({"org_id": "entity"} if entity == "org" else {}))
+    rows = tuple((await queue.flush_and_get_aggregated_daily_spend_update_transactions()).values())
+    assert sorted((row["model_group"], row["endpoint"], row["spend"], row["api_requests"]) for row in rows) == [
+        ("public-a", "/chat/completions", 2.5, 2),
+        ("public-a", "/responses", 1.25, 1),
+        ("public-b", "/chat/completions", 1.25, 1),
+    ]

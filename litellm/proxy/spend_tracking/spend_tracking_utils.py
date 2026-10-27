@@ -3,6 +3,7 @@ import os
 import re
 import secrets
 from collections.abc import Mapping, Sequence
+from copy import deepcopy
 from datetime import datetime, timezone
 from datetime import datetime as dt
 from functools import reduce
@@ -506,6 +507,31 @@ def _scrub_raw_model_from_error_information(
     )
 
 
+def _normalize_cache_read_input_tokens_from_prompt_details(usage: Mapping[str, object]) -> Mapping[str, object]:
+    copied_usage: Final = deepcopy(usage)
+    raw_details: Final = copied_usage.get("prompt_tokens_details")
+    if not isinstance(raw_details, (BaseModel, Mapping)):
+        return copied_usage
+    details: Final = TypeAdapter(Mapping[str, object]).validate_python(
+        raw_details.model_dump() if isinstance(raw_details, BaseModel) else raw_details
+    )
+    normalized_cache: Final = (
+        MappingProxyType({"cache_read_input_tokens": details["cached_tokens"]})
+        if copied_usage.get("cache_read_input_tokens") is None and details.get("cached_tokens") is not None
+        else MappingProxyType({})
+    )
+    return MappingProxyType({**copied_usage, "prompt_tokens_details": details, **normalized_cache})
+
+
+def _standard_logging_usage(payload: object) -> Mapping[str, object] | None:
+    if payload is None:
+        return None
+    raw_payload: Final = TypeAdapter(Mapping[str, object]).validate_python(payload)
+    metadata: Final = TypeAdapter(Mapping[str, object]).validate_python(raw_payload.get("metadata") or {})
+    usage: Final = metadata.get("usage_object")
+    return TypeAdapter(Mapping[str, object]).validate_python(usage) if usage is not None else None
+
+
 def get_logging_payload(
     kwargs: dict | None,
     response_obj: object,
@@ -569,6 +595,19 @@ def get_logging_payload(
         standard_logging_prompt_tokens = standard_logging_payload.get("prompt_tokens", 0)
         standard_logging_completion_tokens = standard_logging_payload.get("completion_tokens", 0)
         standard_logging_total_tokens = standard_logging_payload.get("total_tokens", 0)
+    fallback_usage: Final = (
+        _standard_logging_usage(standard_logging_payload)
+        if not usage
+        and not is_unbilled_non_inference_call(
+            TypeAdapter(str | None).validate_python(call_type),
+            TypeAdapter(Mapping[str, object]).validate_python(metadata),
+            response_obj_dict,
+        )
+        else None
+    )
+    normalized_usage: Final = _normalize_cache_read_input_tokens_from_prompt_details(
+        fallback_usage if fallback_usage is not None else TypeAdapter(Mapping[str, object]).validate_python(usage)
+    )
     _trusted_hash = metadata.get("user_api_key_hash")
     _key_alias = metadata.get("user_api_key_alias")
     _key_already_redacted = (
@@ -748,7 +787,7 @@ def get_logging_payload(
 
     special_usage_fields: Final = ["completion_tokens", "prompt_tokens", "total_tokens"]
     additional_usage_values = {}
-    for k, v in usage.items():
+    for k, v in normalized_usage.items():
         if k not in special_usage_fields:
             if isinstance(v, BaseModel):
                 v = v.model_dump()
@@ -806,9 +845,15 @@ def get_logging_payload(
             metadata=safe_dumps(clean_metadata),
             cache_key=cache_key,
             spend=kwargs.get("response_cost", 0),
-            total_tokens=usage.get("total_tokens", standard_logging_total_tokens),
-            prompt_tokens=usage.get("prompt_tokens", standard_logging_prompt_tokens),
-            completion_tokens=usage.get("completion_tokens", standard_logging_completion_tokens),
+            total_tokens=TypeAdapter(int).validate_python(
+                normalized_usage.get("total_tokens", standard_logging_total_tokens) or 0
+            ),
+            prompt_tokens=TypeAdapter(int).validate_python(
+                normalized_usage.get("prompt_tokens", standard_logging_prompt_tokens) or 0
+            ),
+            completion_tokens=TypeAdapter(int).validate_python(
+                normalized_usage.get("completion_tokens", standard_logging_completion_tokens) or 0
+            ),
             request_tags=request_tags,
             end_user=end_user_id or "",
             api_base=_api_base,

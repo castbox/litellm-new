@@ -91,6 +91,9 @@ export const prepareModelAddRequest = async (formValues: Record<string, any>, ac
         if (value === "") {
           continue;
         }
+        if (key === "vector_store_ids" && Array.isArray(value) && value.length === 0) {
+          continue;
+        }
         if (key === "litellm_credential_name" && value == null) {
           continue;
         }

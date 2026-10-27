@@ -1,3 +1,18 @@
+import DeerAPILogo from "../../public/assets/logos/deerapi.jpeg";
+import DeerAPI_GeminiLogo from "../../public/assets/logos/deerapi.jpeg";
+import DeerAPI_ClaudeLogo from "../../public/assets/logos/deerapi.jpeg";
+import InfiniAILogo from "../../public/assets/logos/infiniai.png";
+import BLTCYLogo from "../../public/assets/logos/bltcy.png";
+import XiakeXingLogo from "../../public/assets/logos/xiakexing.jpeg";
+import ShuBiaoBiaoLogo from "../../public/assets/logos/shubiaobiao.png";
+import OmniLinkLogo from "../../public/assets/logos/omnilink.png";
+import OminiLink_GeminiLogo from "../../public/assets/logos/omnilink.png";
+import OneRouterLogo from "../../public/assets/logos/onerouter.png";
+import FunCloudLogo from "../../public/assets/logos/funcloud.png";
+import FunCloudClaudeLogo from "../../public/assets/logos/funcloud.png";
+import ComflyChatLogo from "../../public/assets/logos/comflychat.png";
+import ApiMartLogo from "../../public/assets/logos/apimart.png";
+import ToAPIsLogo from "../../public/assets/logos/toapis.png";
 import { resolveLogoSrc } from "@/lib/assetPaths";
 import a2aAgentLogo from "../../public/assets/logos/a2a_agent.png";
 import ai21Logo from "../../public/assets/logos/ai21.svg";
@@ -83,6 +98,7 @@ export enum Providers {
   BedrockMantle = "Amazon Bedrock Mantle",
   SageMaker = "AWS SageMaker",
   Azure = "Azure",
+  Azure_OpenAI_v1 = "Azure OpenAI v1",
   Azure_AI_Studio = "Azure AI Foundry (Studio)",
   Azure_Speech = "Azure AI Speech",
   AZURE_TEXT = "Azure Text",
@@ -187,8 +203,24 @@ export enum Providers {
   WATSONX = "Watsonx",
   WATSONX_TEXT = "Watsonx Text",
   xAI = "xAI",
+  DeerAPI = "DeerAPI",
+  DeerAPI_Gemini = "DeerAPI Gemini",
+  DeerAPI_Claude = "DeerAPI Claude",
+  InfiniAI = "InfiniAI",
+  BLTCY = "BLTCY",
+  XiakeXing = "XiakeXing",
+  ShuBiaoBiao = "ShuBiaoBiao",
+  OmniLink = "OmniLink",
+  OminiLink_Gemini = "OminiLink Gemini",
+  OneRouter = "OneRouter",
+  FunCloud = "FunCloud",
+  FunCloudClaude = "FunCloud Claude",
+  ComflyChat = "ComflyChat",
+  ApiMart = "ApiMart",
+  ApiGo = "ApiGo",
   XINFERENCE = "Xinference",
   ZAI = "Z.AI (Zhipu AI)",
+  ToAPIs = "ToAPIs",
 }
 
 export const provider_map: Record<string, string> = {
@@ -202,6 +234,7 @@ export const provider_map: Record<string, string> = {
   AssemblyAI: "assemblyai",
   AUTO_ROUTER: "auto_router",
   Azure: "azure",
+  Azure_OpenAI_v1: "azure_openai_v1",
   Azure_AI_Studio: "azure_ai",
   Azure_Speech: "azure_speech",
   AZURE_TEXT: "azure_text",
@@ -309,8 +342,24 @@ export const provider_map: Record<string, string> = {
   WATSONX: "watsonx",
   WATSONX_TEXT: "watsonx_text",
   xAI: "xai",
+  DeerAPI: "deerapi",
+  DeerAPI_Gemini: "deerapi_gemini",
+  DeerAPI_Claude: "deerapi_claude",
+  InfiniAI: "infiniai",
+  BLTCY: "bltcy",
+  XiakeXing: "xiakexing",
+  ShuBiaoBiao: "shubiaobiao",
+  OmniLink: "omnilink",
+  OminiLink_Gemini: "ominilink_gemini",
+  OneRouter: "onerouter",
+  FunCloud: "funcloud",
+  FunCloudClaude: "funcloud_claude",
+  ComflyChat: "comflychat",
+  ApiMart: "apimart",
+  ApiGo: "apigo",
   XINFERENCE: "xinference",
   ZAI: "zai",
+  ToAPIs: "toapis",
 };
 
 const standaloneSubproviderSlugs = new Set<string>(["bedrock_mantle"]);
@@ -411,6 +460,23 @@ export const providerLogoMap: Partial<Record<Providers, string>> = {
   [Providers.WATSONX_TEXT]: watsonxLogo.src,
   [Providers.xAI]: xaiLogo.src,
   [Providers.XINFERENCE]: xinferenceLogo.src,
+  [Providers.Azure_OpenAI_v1]: microsoftAzureLogo.src,
+  [Providers.ApiGo]: openaiSmallLogo.src,
+  [Providers.DeerAPI]: DeerAPILogo.src,
+  [Providers.DeerAPI_Gemini]: DeerAPI_GeminiLogo.src,
+  [Providers.DeerAPI_Claude]: DeerAPI_ClaudeLogo.src,
+  [Providers.InfiniAI]: InfiniAILogo.src,
+  [Providers.BLTCY]: BLTCYLogo.src,
+  [Providers.XiakeXing]: XiakeXingLogo.src,
+  [Providers.ShuBiaoBiao]: ShuBiaoBiaoLogo.src,
+  [Providers.OmniLink]: OmniLinkLogo.src,
+  [Providers.OminiLink_Gemini]: OminiLink_GeminiLogo.src,
+  [Providers.OneRouter]: OneRouterLogo.src,
+  [Providers.FunCloud]: FunCloudLogo.src,
+  [Providers.FunCloudClaude]: FunCloudClaudeLogo.src,
+  [Providers.ComflyChat]: ComflyChatLogo.src,
+  [Providers.ApiMart]: ApiMartLogo.src,
+  [Providers.ToAPIs]: ToAPIsLogo.src,
 };
 
 export const getProviderLogoAndName = (providerValue: string): { logo: string; displayName: string } => {
@@ -444,6 +510,7 @@ export const getProviderLogoAndName = (providerValue: string): { logo: string; d
 };
 
 const providerPlaceholderMap: Partial<Record<Providers, string>> = {
+  [Providers.Azure_OpenAI_v1]: "gpt-5.2",
   [Providers.AIML]: "aiml/flux-pro/v1.1",
   [Providers.Anthropic]: "claude-3-opus",
   [Providers.Azure]: "my-deployment",

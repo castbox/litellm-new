@@ -2,11 +2,13 @@
 Utility functions for ModelResponse and ModelResponseStream objects.
 """
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Final
 
+from pydantic import TypeAdapter
 from typing_extensions import ReadOnly, TypedDict
 
+from litellm.exceptions import APIResponseValidationError
 from litellm.types.utils import Delta, ModelResponseBase, ModelResponseStream, StreamingChoices
 
 
@@ -15,8 +17,274 @@ class _AttributeView(TypedDict):
 
 
 def _attribute_of(source: object, name: str) -> object:
-    attribute: Final[_AttributeView] = {"value": getattr(source, name)}
+    attribute: Final[_AttributeView] = {"value": getattr(source, name, None)}
     return attribute["value"]
+
+
+_OBJECT_SEQUENCE: Final = TypeAdapter(tuple[object, ...])
+_OBJECT_MAPPING: Final = TypeAdapter(Mapping[object, object])
+
+
+def _sequence_of(value: object) -> tuple[object, ...]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return ()
+    return _OBJECT_SEQUENCE.validate_python(value)
+
+
+CHAT_COMPLETION_IMAGE_BLOCK_TYPES: Final = frozenset({"image", "image_url", "input_image"})
+CHAT_COMPLETION_TEXT_BLOCK_TYPES: Final = frozenset({"input_text", "output_text", "text"})
+
+
+def validate_first_chat_completion_response(
+    model_response: object,
+    model: str | None,
+    llm_provider: str | None = None,
+) -> None:
+    """
+    Validate that the first chat completion choice contains usable output.
+
+    Raises:
+        APIResponseValidationError: If the first choice is missing or empty.
+    """
+    if _first_chat_completion_choice_has_output(model_response):
+        return
+
+    raise APIResponseValidationError(
+        message="empty completion response",
+        llm_provider=llm_provider or "",
+        model=model,
+    )
+
+
+def validate_image_generation_response(
+    image_response: object,
+    model: str | None,
+    llm_provider: str | None = None,
+) -> None:
+    if _image_generation_response_has_output(image_response):
+        return
+
+    raise APIResponseValidationError(
+        message="empty image generation response",
+        llm_provider=llm_provider or "",
+        model=model,
+    )
+
+
+def validate_responses_api_response(
+    responses_api_response: object,
+    model: str | None,
+    llm_provider: str | None = None,
+) -> None:
+    if _responses_api_response_has_output(responses_api_response):
+        return
+
+    raise APIResponseValidationError(
+        message="empty responses api response",
+        llm_provider=llm_provider or "",
+        model=model,
+    )
+
+
+def validate_non_chat_completion_response(response: object, model: str | None, call_type: str) -> None:
+    provider: Final = _get_field(_get_field(response, "_hidden_params"), "custom_llm_provider")
+    llm_provider: Final = provider if isinstance(provider, str) else None
+    match call_type:
+        case "image_generation" | "aimage_generation":
+            validate_image_generation_response(response, model, llm_provider)
+        case "responses" | "aresponses":
+            validate_responses_api_response(response, model, llm_provider)
+        case _:
+            return
+
+
+def _first_chat_completion_choice_has_output(model_response: object) -> bool:
+    first_choice: Final = _get_first_choice(model_response)
+    if first_choice is None:
+        return False
+
+    message: Final = _get_field(first_choice, "message")
+    if message is None:
+        return False
+
+    return _chat_completion_message_has_output(message)
+
+
+def _image_generation_response_has_output(image_response: object) -> bool:
+    return any(
+        _image_object_has_output(image_object) for image_object in _sequence_of(_get_field(image_response, "data"))
+    )
+
+
+def _image_object_has_output(image_object: object) -> bool:
+    return any(_has_non_whitespace_text(_get_field(image_object, field_name)) for field_name in ("url", "b64_json"))
+
+
+def _responses_api_response_has_output(responses_api_response: object) -> bool:
+    status: Final = _get_field(responses_api_response, "status")
+    if status is not None and status != "completed":
+        return True
+
+    return any(
+        _responses_api_output_item_has_output(item)
+        for item in _sequence_of(_get_field(responses_api_response, "output"))
+    )
+
+
+def _responses_api_output_item_has_output(item: object) -> bool:
+    item_type: Final = _get_field(item, "type")
+
+    if item_type == "message":
+        return _responses_api_message_has_output(item)
+
+    if item_type == "image_generation_call":
+        return _has_non_whitespace_text(_get_field(item, "result"))
+
+    if item_type in {"function_call", "web_search_call", "file_search_call"}:
+        return True
+
+    if item_type == "reasoning":
+        return _responses_api_reasoning_has_output(item)
+
+    return _has_meaningful_response_output(item)
+
+
+def _responses_api_message_has_output(item: object) -> bool:
+    return any(
+        _responses_api_content_item_has_output(content_item)
+        for content_item in _sequence_of(_get_field(item, "content"))
+    )
+
+
+def _responses_api_content_item_has_output(content_item: object) -> bool:
+    content_type: Final = _get_field(content_item, "type")
+
+    if content_type in CHAT_COMPLETION_TEXT_BLOCK_TYPES:
+        return _has_non_whitespace_text(_extract_text_value(_get_field(content_item, "text")))
+
+    if content_type in CHAT_COMPLETION_IMAGE_BLOCK_TYPES:
+        return True
+
+    return _has_meaningful_response_output(content_item)
+
+
+def _responses_api_reasoning_has_output(item: object) -> bool:
+    for field_name in ("summary", "content", "encrypted_content"):
+        if _has_meaningful_response_output(_get_field(item, field_name)):
+            return True
+    return False
+
+
+def _has_meaningful_response_output(value: object) -> bool:
+    if value is None:
+        return False
+
+    if isinstance(value, str):
+        return len(value.strip()) > 0
+
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        return any(_has_meaningful_response_output(item) for item in _OBJECT_SEQUENCE.validate_python(value))
+
+    if isinstance(value, dict):
+        return any(_has_meaningful_response_output(item) for item in _OBJECT_MAPPING.validate_python(value).values())
+
+    return True
+
+
+def _get_first_choice(model_response: object) -> object | None:
+    choices: Final = _sequence_of(_get_field(model_response, "choices"))
+    return choices[0] if choices else None
+
+
+def _chat_completion_message_has_output(message: object) -> bool:
+    content: Final = _get_field(message, "content")
+
+    if _has_non_whitespace_text(content):
+        return True
+
+    if _has_non_whitespace_text(_get_field(message, "refusal")):
+        return True
+
+    if _content_blocks_have_output(content):
+        return True
+
+    images: Final = _get_field(message, "images")
+    if _has_items(images):
+        return True
+
+    if _get_field(message, "audio") is not None:
+        return True
+
+    if _has_non_whitespace_text(_get_field(message, "reasoning_content")):
+        return True
+
+    thinking_blocks: Final = _get_field(message, "thinking_blocks")
+    if _has_items(thinking_blocks):
+        return True
+
+    tool_calls: Final = _get_field(message, "tool_calls")
+    if _has_items(tool_calls):
+        return True
+
+    compaction_blocks: Final = _get_field(_get_field(message, "provider_specific_fields"), "compaction_blocks")
+    return _get_field(message, "function_call") is not None or _content_blocks_have_output(compaction_blocks)
+
+
+def _content_blocks_have_output(content: object) -> bool:
+    for block in _sequence_of(content):
+        if _content_block_has_output(block):
+            return True
+
+    return False
+
+
+def _content_block_has_output(block: object) -> bool:
+    if _has_non_whitespace_text(block):
+        return True
+
+    block_type: Final = _get_field(block, "type")
+    if block_type in CHAT_COMPLETION_IMAGE_BLOCK_TYPES:
+        return True
+
+    if block_type == "compaction":
+        return _has_non_whitespace_text(_get_field(block, "content"))
+
+    if block_type in CHAT_COMPLETION_TEXT_BLOCK_TYPES and _has_non_whitespace_text(
+        _extract_text_value(_get_field(block, "text"))
+    ):
+        return True
+
+    if _has_non_whitespace_text(_extract_text_value(_get_field(block, "text"))):
+        return True
+
+    return any(_get_field(block, field_name) is not None for field_name in ("image", "image_url"))
+
+
+def _extract_text_value(text_value: object) -> str | None:
+    if isinstance(text_value, str):
+        return text_value
+
+    if isinstance(text_value, dict):
+        text_mapping: Final = _OBJECT_MAPPING.validate_python(text_value)
+        nested_text: Final = text_mapping.get("text") or text_mapping.get("value")
+        return nested_text if isinstance(nested_text, str) else None
+
+    attribute_text: Final = _get_field(text_value, "text")
+    return attribute_text if isinstance(attribute_text, str) else None
+
+
+def _get_field(value: object, field_name: str) -> object:
+    if isinstance(value, dict):
+        return _OBJECT_MAPPING.validate_python(value).get(field_name)
+    return _attribute_of(value, field_name)
+
+
+def _has_non_whitespace_text(value: object) -> bool:
+    return isinstance(value, str) and len(value.strip()) > 0
+
+
+def _has_items(value: object) -> bool:
+    return bool(_sequence_of(value))
 
 
 def is_model_response_stream_empty(model_response: ModelResponseStream) -> bool:
