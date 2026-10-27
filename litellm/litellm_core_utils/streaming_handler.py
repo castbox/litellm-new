@@ -1864,6 +1864,8 @@ class CustomStreamWrapper:
                     self.chunks.append(response)
                     if self._is_finish_chunk(response):
                         self._validate_complete_streaming_response(self._build_complete_streaming_response())
+                    if not litellm.disable_streaming_logging:
+                        executor.submit(self.run_success_logging_and_cache_storage, response, cache_hit)
 
                     # Add mcp_list_tools to first chunk if present
                     if not self.sent_first_chunk and response.choices:
@@ -2003,6 +2005,8 @@ class CustomStreamWrapper:
                 if self.stream_options is None:  # add usage as hidden param
                     usage = calculate_total_usage(chunks=self.chunks)
                     processed_chunk.hidden_params["usage"] = usage
+                if not litellm.disable_streaming_logging:
+                    executor.submit(self.run_success_logging_and_cache_storage, processed_chunk, cache_hit)
                 # Deliberately do NOT restore context here even though
                 # completion_stream is already exhausted: this chunk is still
                 # real data belonging to this call, and the caller's own

@@ -1,6 +1,9 @@
 import asyncio
 import json
 import time
+from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from typing import Final, NoReturn, Optional
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
@@ -10,7 +13,9 @@ import litellm
 from litellm import verbose_logger
 from litellm._logging import session_id_var, trace_id_var
 from litellm.exceptions import MidStreamFallbackError
+from litellm.integrations.custom_logger import CustomLogger
 from litellm.litellm_core_utils.litellm_logging import Logging
+from litellm.litellm_core_utils import streaming_handler
 from litellm.litellm_core_utils.streaming_handler import (
     CustomStreamWrapper,
     _ProviderChunkEarlyReturn,
@@ -6455,3 +6460,87 @@ def test_calculate_total_usage_keeps_extra_fields_and_zero_values(as_model):
     assert result.prompt_tokens_details.cached_tokens == 3
     assert result.completion_tokens_details.reasoning_tokens == 2
     assert result.completion_tokens_details.text_tokens == 2
+
+
+class _StreamingEventRecorder(CustomLogger):
+    def __init__(self) -> None:
+        super().__init__()
+        self.streamed_text: tuple[str, ...] = ()
+        self.finish_reasons: tuple[str, ...] = ()
+        self.success_responses: tuple[object, ...] = ()
+
+    def log_stream_event(
+        self, kwargs: Mapping[str, object], response_obj: object, start_time: datetime, end_time: datetime
+    ) -> None:
+        if isinstance(response_obj, ModelResponseStream) and response_obj.choices:
+            content: Final = response_obj.choices[0].delta.content
+            if content:
+                self.streamed_text = (*self.streamed_text, content)
+            finish_reason: Final = response_obj.choices[0].finish_reason
+            if finish_reason:
+                self.finish_reasons = (*self.finish_reasons, finish_reason)
+
+    def log_success_event(
+        self, kwargs: Mapping[str, object], response_obj: object, start_time: datetime, end_time: datetime
+    ) -> None:
+        self.success_responses = (*self.success_responses, response_obj)
+
+
+@pytest.mark.parametrize("valid_output", (False, True))
+@pytest.mark.parametrize("logging_disabled", (False, True))
+@pytest.mark.parametrize("with_finish", (False, True))
+def test_sync_stream_notifies_each_chunk_before_logging_validated_success(
+    valid_output: bool, logging_disabled: bool, with_finish: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    recorder: Final = _StreamingEventRecorder()
+    logger: Final = Logging(
+        model="unit-model",
+        messages=[{"role": "user", "content": "hello"}],
+        stream=True,
+        call_type="completion",
+        start_time=datetime(2026, 1, 1),
+        litellm_call_id="stream-events",
+        function_id="stream-events",
+        dynamic_success_callbacks=[recorder],
+    )
+    source: Final = (
+        ModelResponseStream(
+            choices=[StreamingChoices(delta=Delta(role="assistant", content="hello " if valid_output else ""))]
+        ),
+        ModelResponseStream(
+            choices=[StreamingChoices(delta=Delta(content="world" if valid_output else ""))],
+            usage=Usage(prompt_tokens=1, completion_tokens=2, total_tokens=3),
+        ),
+        *(
+            (ModelResponseStream(choices=[StreamingChoices(delta=Delta(), finish_reason="stop")]),)
+            if with_finish
+            else ()
+        ),
+    )
+    wrapper: Final = CustomStreamWrapper(
+        completion_stream=ModelResponseListIterator(model_responses=list(source)),
+        model="unit-model",
+        custom_llm_provider="openai",
+        logging_obj=logger,
+    )
+    monkeypatch.setattr(litellm, "disable_streaming_logging", logging_disabled)
+    with ThreadPoolExecutor(max_workers=1) as worker:
+        monkeypatch.setattr(streaming_handler, "executor", worker)
+        next(wrapper)
+        worker.submit(lambda: None).result()
+        assert recorder.streamed_text == (("hello ",) if valid_output and not logging_disabled else ())
+        assert recorder.success_responses == ()
+        if valid_output:
+            received: Final = tuple(wrapper)
+            assert any(choice.finish_reason == "stop" for chunk in received for choice in chunk.choices)
+        else:
+            with pytest.raises(MidStreamFallbackError, match="empty completion response"):
+                tuple(wrapper)
+
+    assert recorder.streamed_text == (("hello ", "world") if valid_output and not logging_disabled else ())
+    assert recorder.finish_reasons == (("stop",) if valid_output and not logging_disabled else ())
+    completed_text: Final = tuple(
+        response.choices[0].message.content if isinstance(response, ModelResponse) else response
+        for response in recorder.success_responses
+    )
+    assert completed_text == (("hello world",) if valid_output and not logging_disabled else ())

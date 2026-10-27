@@ -36,13 +36,17 @@ Python 使用官方锁定的 3.13 环境，前端使用 `.nvmrc` 对应的 Node 
 ```sh
 uv sync --frozen --extra proxy --extra extra_proxy --python 3.13
 LITELLM_LOCAL_MODEL_COST_MAP=True PYTHONPATH=. uv run --no-sync pytest -q tests/unit/test_main_custom_providers.py
-BASE_REF=ea7ca16dbc3904d9e59a9505f379a2ca3091821f make check
+PYTHONPATH=. LITELLM_LOCAL_MODEL_COST_MAP=True BASE_REF=ea7ca16dbc3904d9e59a9505f379a2ca3091821f make check
 docker build --platform linux/arm64 --progress plain -t litellm-upgrade:v1.106.4-candidate .
 ```
 
 当前远端默认分支仍包含旧定制版本，检查本次迁移新增问题时，将静态检查比较基线固定为上述新官方 SHA。没有修改检查预算、ANY_CAPS 或门槛。`make check` 的日志位置会打印到命令输出，可据此复核结果
 
 受影响后端组合通过 1363 项，后续渠道密钥隔离回归通过 94 项，完整 Anthropic Chat 转换及响应检查通过 474 项；这些测试集合有重叠。前端四个指定文件通过 222 项，另有 4 项官方预期失败。最终 `make check` 通过，源码类型检查满足官方存量规则门槛，e2e 类型检查为零错误，前端有 24 项存量 lint 警告。验证边界和逐项证据见迁移去向台账
+
+Review 修复了同步流式调用不再逐段通知自定义日志回调的回归，最终成功日志仍在完整响应通过校验后触发。相关后端组合通过 872 项，新增回调测试的 8 个参数组合单独复跑通过，集合与此前结果有重叠。企业构建路径补齐 builder 的 curl，并在加载 nvm 时禁止自动切换到尚未安装的 Node，随后明确安装所需版本
+
+企业构建验证使用补齐 curl 的 builder，挂载最终构建脚本并启用仓库配色样例，Node 首次安装和校验、npm ci、类型检查、静态页面导出及 Proxy 输出目录检查全部通过。此前 `litellm-upgrade:v1.106.4-candidate` 运行镜像基于 `93225d1`，发布前须从包含本轮修复的提交重新构建运行镜像
 
 新增接入优先沿用 `litellm/llms/openai_like/providers.json` 的注册机制；协议有差异时参考本分支 Gemini 和 Claude 配置。修改后需要同时核对供应商识别、参数映射、公开配置、凭证字段、UI、普通与流式调用、价格来源及对应单测。ApiGo 的接入示例为 `apigo/<上游模型名>`，显式提供 `api_base` 和 `api_key` 可覆盖默认配置；公开 endpoint 元数据保留其历史文档地址，该地址不代表本分支已向官方发布文档
 

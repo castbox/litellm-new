@@ -36,7 +36,7 @@
 | --- | --- | --- | --- |
 | E01 | 聊天完整结果有效性 | 迁移 `model_response_utils.py` 和 `utils.post_call_processing`，检查首 choice，接受文本、工具、音频、图片、推理、refusal 及新版有效 compaction 摘要 | `test_model_response_utils.py`、`test_utils_post_call_processing.py`，空结果失败及有效非文本结果 |
 | E02 | 图片和 Responses 有效性 | 迁移 `validate_image_generation_response`、`validate_responses_api_response`；Responses 非 completed 状态保留 | `test_utils_post_call_processing.py`，空图片、空 completed 结果拒绝及图片输出接受 |
-| E03 | 流式结束、日志和缓存顺序 | 适配 `streaming_handler.py`：复制分段后拼接，在结束块和自然结束时验证；无效结果进入失败记录，保留已知用量 | `test_streaming_handler.py`，同步/异步、有/无 finish 的空流、工具参数分段保持、usage-only、拼接失败用量及新版收尾回归 |
+| E03 | 流式结束、日志和缓存顺序 | 适配 `streaming_handler.py`：复制分段后拼接，在结束块和自然结束时验证；无效结果进入失败记录，保留已知用量；同步调用继续逐段通知日志回调，完整响应通过校验后才记录最终成功 | `test_streaming_handler.py`，同步/异步、有/无 finish 的空流、工具参数分段保持、usage-only、拼接失败用量及新版收尾回归；`test_sync_stream_notifies_each_chunk_before_logging_validated_success` 的 8 个组合验证逐段回调、最终成功次数和日志开关 |
 | E04 | 备用模型及异常 | 适配 `router.py` 和新版 stream fallback：校验失败且有普通备用时跳过相同部署的普通重试，保留官方中途异常与部分用量处理 | `test_router.py::test_empty_response_uses_backup_without_retrying_the_same_deployment`，真实 Router 加 HTTP 传输替身验证主备各调用一次；流式异常回归 |
 
 ## 用量与费用记录
@@ -84,8 +84,8 @@
 
 | 编号 | 能力 | 去向与新版实现 | 对应验证 |
 | --- | --- | --- | --- |
-| B01 | 默认配色也构建 UI | 沿用官方 ui-builder 始终编译默认 UI；存在 enterprise_colors 时由 build_admin_ui 调用配色构建 | 默认配色完整构建和最终镜像 UI 检查；本次没有提供 enterprise_colors 配色文件 |
-| B02 | Node 和前端依赖准备 | 按新版 `.nvmrc` 使用 Node 24；本地脚本准备版本、核对依赖并按 lock 选择 npm ci，固定 nvm 下载及校验和 | npm ci、前端类型检查和静态构建；最终镜像使用官方锁定 Node 构建阶段 |
+| B01 | 默认配色也构建 UI | 沿用官方 ui-builder 始终编译默认 UI；存在 enterprise_colors 时由 build_admin_ui 调用配色构建 | 默认配色完整构建和镜像 UI 检查；review 在补齐 curl 的 builder 中挂载最终 build_ui.sh，使用仓库配色样例，完成 Node 首次安装、npm ci、类型检查、静态页面导出及 Proxy 输出目录检查 |
+| B02 | Node 和前端依赖准备 | 按新版 `.nvmrc` 使用 Node 24；本地脚本准备版本、核对依赖并按 lock 选择 npm ci，固定 nvm 下载及校验和；builder 补齐 curl，加载 nvm 时禁用自动切换，再明确安装所需版本，避免首次安装提前退出 | npm ci、前端类型检查和静态构建；补修后 Node 首次安装及完整企业构建路径验证通过，见 B01 |
 | B03 | apk 安装重试 | 迁移 `docker/apk_add_with_retry.sh`，四个 Wolfi stage 使用；默认 5 次、间隔 10 秒，最终失败退出 | shell 首次成功、第三次成功、耗尽失败、非法次数，以及候选镜像构建 |
 | B04 | 本地扩展包入镜像 | 沿用官方 uv workspace 安装本地 extras，三份 schema、迁移和生成 Prisma 客户端配套 | 隔离库迁移、最终镜像中的安装包 schema、迁移与客户端核对 |
 | B05 | 前端生成产物 | 从新版定制源码重建 UI，不复制旧版 672 个变化的生成文件 | 静态构建成功、镜像 UI 页面及引用的 _next 资源检查 |
@@ -98,7 +98,9 @@
 
 2026-10-27 本地验证结果：受影响后端组合通过 1363 项；随后补充的渠道密钥隔离场景与既有供应商场景合跑通过 94 项，其中新增 4 个隔离场景。新版 Claude 压缩摘要兼容修复后，完整 Anthropic Chat 转换及响应有效性测试通过 474 项，其中新增 3 个摘要有效性场景。这几组回归有重叠，不能相加作为独立测试总数。前端四个指定文件通过 222 项，另有 4 项官方 expected fail，前端类型无错误
 
-最终 `make check` 比较固定新官方 SHA 通过，覆盖上述最后两项修复。四个 gate 的规则计数没有增长，源码类型检查按官方存量门槛通过，不表示源码零类型错误；e2e 及 harness 类型检查为 0 errors、0 warnings。前端 lint 有 24 项存量警告，0 errors，OpenAPI 与前端生成类型无漂移
+最终 `make check` 比较固定新官方 SHA 通过。四个 gate 均满足原有规则计数门槛，未修改门槛；源码类型检查通过不表示源码零类型错误，e2e 及 harness 类型检查为 0 errors、0 warnings。前端 lint 有 24 项存量警告，0 errors，OpenAPI 与前端生成类型无漂移
+
+Review 补修后，同步流式、日志、分段拼接、自定义回调和渠道调用的相关后端组合通过 872 项；新增逐段日志回调测试的 8 个参数组合在最终测试版本上单独复跑通过。固定新官方 SHA 的 `make check` 再次通过。这些回归集合与上述历史测试有重叠，不累加为独立总数
 
 迁移数据库测试使用 `DATABASE_URL` 指向隔离 PostgreSQL，并只在随机 schema 内操作。完整 ledger 演练是合成历史环境，不是生产数据副本。供应商测试使用 HTTP 传输替身验证实际分派与序列化，本地镜像冒烟使用脚本上游，均不能替代真实供应商验收
 

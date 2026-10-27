@@ -57,6 +57,7 @@ COPY --from=uvbin /uvx /usr/local/bin/uvx
 
 RUN apk_add_with_retry \
     bash \
+    curl \
     gcc \
     python-3.13 \
     python-3.13-dev \

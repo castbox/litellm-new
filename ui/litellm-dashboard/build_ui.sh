@@ -21,7 +21,7 @@ if ! command -v node >/dev/null || [ "$(node --version)" != "v${requested_node_v
     fi
     bash "$NVM_SCRIPT"
   fi
-  source "$NVM_DIR/nvm.sh"
+  source "$NVM_DIR/nvm.sh" --no-use
   nvm install "$requested_node_version"
 fi
 
