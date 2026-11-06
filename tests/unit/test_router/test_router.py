@@ -9969,17 +9969,23 @@ class TestRouterRequestTimeoutPropagation:
 
 
 # ---------------------------------------------------------------------------
-# Deferred-stream eager-fetch tests
+# Provider stream initialization tests
 # ---------------------------------------------------------------------------
 
 
-async def test_deferred_vertex_429_cools_each_deployment_before_retry_and_advances_order(
-    respx_mock: respx.MockRouter, monkeypatch: pytest.MonkeyPatch, vertex_adc_credentials: None
+@pytest.mark.parametrize("sync_mode", [False, True])
+async def test_vertex_429_cools_each_deployment_before_retry_and_advances_order(
+    respx_mock: respx.MockRouter, monkeypatch: pytest.MonkeyPatch, vertex_adc_credentials: None, sync_mode: bool
 ) -> None:
     monkeypatch.setattr(litellm, "disable_aiohttp_transport", True)
     failure_events: Final[asyncio.Queue[object]] = asyncio.Queue()
 
     class FailureEvents(CustomLogger):
+        def log_failure_event(
+            self, kwargs: Mapping[str, object], response_obj: object, start_time: datetime, end_time: datetime
+        ) -> None:
+            failure_events.put_nowait(kwargs.get("exception"))
+
         async def async_log_failure_event(
             self, kwargs: Mapping[str, object], response_obj: object, start_time: datetime, end_time: datetime
         ) -> None:
@@ -9998,6 +10004,7 @@ async def test_deferred_vertex_429_cools_each_deployment_before_retry_and_advanc
                     "max_retries": 0,
                     "num_retries": retries,
                     "cooldown_time": cooldown,
+                    "stream_timeout": 5 if order == 5 else 8,
                 },
                 "model_info": {"id": project},
             }
@@ -10028,14 +10035,16 @@ async def test_deferred_vertex_429_cools_each_deployment_before_retry_and_advanc
     )
 
     try:
-        response: Final = await router.acompletion(
-            model="deferred-cooldown-test", messages=[{"role": "user", "content": "Hello"}], stream=True
-        )
-        chunks: Final = [chunk async for chunk in response]
+        request: Final = {
+            "model": "deferred-cooldown-test", "messages": [{"role": "user", "content": "Hello"}], "stream": True
+        }
+        response: Final = router.completion(**request) if sync_mode else await router.acompletion(**request)
+        chunks: Final = list(response) if sync_mode else [chunk async for chunk in response]
         active: Final = dict(router.cooldown_cache.get_active_cooldowns(["pt-first", "pt-second"], None))
 
         assert "".join(chunk.choices[0].delta.content or "" for chunk in chunks) == "ok"
         assert (first.call_count, second.call_count, healthy.call_count) == (1, 1, 1)
+        assert [call.request.extensions["timeout"]["read"] for call in respx_mock.calls] == [5, 5, 8]
         assert set(active) == {"pt-first", "pt-second"}
         assert {value["cooldown_time"] for value in active.values()} == {15}
         assert {str(value["status_code"]) for value in active.values()} == {"429"}
@@ -10043,10 +10052,8 @@ async def test_deferred_vertex_429_cools_each_deployment_before_retry_and_advanc
         assert isinstance(failure_events.get_nowait(), litellm.RateLimitError)
         assert isinstance(failure_events.get_nowait(), litellm.RateLimitError)
 
-        subsequent: Final = await router.acompletion(
-            model="deferred-cooldown-test", messages=[{"role": "user", "content": "Hello again"}], stream=True
-        )
-        subsequent_chunks: Final = [chunk async for chunk in subsequent]
+        subsequent: Final = router.completion(**request) if sync_mode else await router.acompletion(**request)
+        subsequent_chunks: Final = list(subsequent) if sync_mode else [chunk async for chunk in subsequent]
         assert "".join(chunk.choices[0].delta.content or "" for chunk in subsequent_chunks) == "ok"
         assert (first.call_count, second.call_count, healthy.call_count) == (1, 1, 2)
         assert failure_events.empty()
@@ -10054,275 +10061,49 @@ async def test_deferred_vertex_429_cools_each_deployment_before_retry_and_advanc
         router.reset()
 
 
-def _make_deferred_stream_wrapper(make_call_fn):
-    """Return a CustomStreamWrapper with completion_stream=None and the given make_call."""
-    from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
-
-    logging_obj = MagicMock()
-    logging_obj.model_call_details = {"litellm_params": {}}
-    return CustomStreamWrapper(
-        completion_stream=None,
-        model="vertex_ai/gemini-2.0-flash",
-        logging_obj=logging_obj,
-        custom_llm_provider="vertex_ai_beta",
-        make_call=make_call_fn,
-    )
-
-
-def _make_router_with_vertex_and_fallback():
-    return litellm.Router(
-        model_list=[
-            {
-                "model_name": "my-gemini",
-                "litellm_params": {
-                    "model": "vertex_ai/gemini-2.0-flash",
-                    "vertex_project": "test-project",
-                    "vertex_location": "us-central1",
-                },
-            },
-            {
-                "model_name": "my-fallback",
-                "litellm_params": {
-                    "model": "openai/gpt-4o-mini",
-                    "api_key": "sk-fake",
-                },
-            },
-        ],
-        fallbacks=[{"my-gemini": ["my-fallback"]}],
-        num_retries=0,
-    )
-
-
-@pytest.mark.asyncio
-async def test_acompletion_deferred_stream_error_propagates_through_acompletion():
-    """Regression: a deferred-stream CustomStreamWrapper whose make_call raises a 429
-    must propagate the exception from within _acompletion's except block so that
-    fail_calls is incremented and the standard
-    router fallback chain can handle it.
-
-    Before the fix, the HTTP call happened inside __anext__ (outside the except block),
-    so fail_calls was never incremented.
-    """
-    import litellm as _litellm
-
-    rate_limit_err = _litellm.RateLimitError(
-        message="Resource exhausted",
-        llm_provider="vertex_ai",
-        model="gemini-2.0-flash",
-    )
-
-    async def failing_make_call(**kwargs):
-        raise rate_limit_err
-
-    router = _make_router_with_vertex_and_fallback()
-    deferred_wrapper = _make_deferred_stream_wrapper(failing_make_call)
-
-    with patch(
-        "litellm.acompletion",
-        new_callable=AsyncMock,
-        return_value=deferred_wrapper,
-    ):
-        with pytest.raises(_litellm.RateLimitError):
-            await router._acompletion(
-                model="vertex_ai/gemini-2.0-flash",
-                messages=[{"role": "user", "content": "Hello"}],
-                stream=True,
-                specific_deployment=router.model_list[0],
-            )
-
-    model_name = router.model_list[0]["litellm_params"]["model"]
-    assert router.fail_calls[model_name] == 1, (
-        "fail_calls must be incremented when the deferred HTTP call fails; "
-        "without the eager fetch_stream() fix this stays at 0"
-    )
-
-
-@pytest.mark.asyncio
-async def test_acompletion_deferred_stream_preserves_original_headers_on_error():
-    """Router is used both by the proxy and directly as an SDK. HTTP-framing headers
-    (Content-Length, Transfer-Encoding, ...) must NOT be stripped at this layer, or
-    direct SDK callers lose legitimate provider metadata (e.g. content-type,
-    proxy-authenticate) that only the proxy's own response construction needs to
-    worry about. Stripping happens in the proxy layer instead
-    (_handle_llm_api_exception)."""
-    import litellm as _litellm
-
-    err = _litellm.RateLimitError(
-        message="Resource exhausted",
-        llm_provider="vertex_ai",
-        model="gemini-2.0-flash",
-    )
-    err.headers = {
-        "content-length": "42",
-        "transfer-encoding": "chunked",
-        "content-encoding": "gzip",
+@pytest.mark.parametrize("sync_mode", [False, True])
+async def test_vertex_stream_open_error_preserves_provider_headers_and_writes_cooldown(
+    respx_mock: respx.MockRouter, monkeypatch: pytest.MonkeyPatch, vertex_adc_credentials: None, sync_mode: bool
+) -> None:
+    monkeypatch.setattr(litellm, "disable_aiohttp_transport", True)
+    headers: Final = {
         "content-type": "application/json",
-        "x-request-id": "abc-123",
+        "x-request-id": "stream-open-error",
+        "retry-after": "7",
     }
-
-    async def failing_make_call(**kwargs):
-        raise err
-
-    router = _make_router_with_vertex_and_fallback()
-    deferred_wrapper = _make_deferred_stream_wrapper(failing_make_call)
-
-    with patch(
-        "litellm.acompletion",
-        new_callable=AsyncMock,
-        return_value=deferred_wrapper,
-    ):
-        with pytest.raises(_litellm.RateLimitError) as exc_info:
-            await router._acompletion(
-                model="vertex_ai/gemini-2.0-flash",
-                messages=[{"role": "user", "content": "Hello"}],
-                stream=True,
-                specific_deployment=router.model_list[0],
-            )
-
-    raised = exc_info.value
-    headers = getattr(raised, "headers", {})
-    assert headers.get("content-length") == "42"
-    assert headers.get("transfer-encoding") == "chunked"
-    assert headers.get("content-encoding") == "gzip"
-    assert headers.get("content-type") == "application/json"
-    assert headers.get("x-request-id") == "abc-123"
-
-
-@pytest.mark.asyncio
-async def test_acompletion_deferred_stream_skipped_when_stream_already_set():
-    """When completion_stream is already populated (non-deferred provider), the eager
-    fetch_stream() call must be skipped entirely; no exception should be raised even
-    if make_call would fail.
-    """
-    from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
-
-    async def would_fail(**kwargs):
-        raise RuntimeError("should not be called")
-
-    logging_obj = MagicMock()
-    logging_obj.model_call_details = {"litellm_params": {}}
-
-    async def noop_aiter():
-        return
-        yield
-
-    noop_stream = noop_aiter()
-    already_set_wrapper = CustomStreamWrapper(
-        completion_stream=noop_stream,
-        model="openai/gpt-4o",
-        logging_obj=logging_obj,
-        custom_llm_provider="openai",
-        make_call=would_fail,
+    route: Final = respx_mock.post(url__regex=r"https://aiplatform.googleapis.com/.*:streamGenerateContent.*").respond(
+        429, json={"error": {"code": 429, "message": "Resource exhausted"}}, headers=headers
     )
-
-    router = litellm.Router(
-        model_list=[
-            {
-                "model_name": "my-model",
-                "litellm_params": {
-                    "model": "openai/gpt-4o",
-                    "api_key": "sk-fake",
-                },
-            }
-        ],
+    router: Final = Router(
+        model_list=[{
+            "model_name": "stream-open-error",
+            "litellm_params": {
+                "model": "vertex_ai/gemini-3.5-flash-lite",
+                "vertex_project": "stream-open-error",
+                "vertex_location": "global",
+                "max_retries": 0,
+                "num_retries": 0,
+                "cooldown_time": 15,
+            },
+            "model_info": {"id": "stream-open-error"},
+        }],
+        num_retries=0,
+        allowed_fails=0,
     )
-
-    with patch(
-        "litellm.acompletion",
-        new_callable=AsyncMock,
-        return_value=already_set_wrapper,
-    ):
-        result = await router._acompletion(
-            model="openai/gpt-4o",
-            messages=[{"role": "user", "content": "Hello"}],
-            stream=True,
-            specific_deployment=router.model_list[0],
-        )
-
-    assert result is not None, "should return a streaming wrapper without errors"
-    assert already_set_wrapper.completion_stream is noop_stream, "completion_stream must not be re-fetched"
-    await noop_stream.aclose()
-
-
-def test_completion_deferred_stream_error_propagates_through_completion():
-    """Regression: the sync router path needs the same eager fetch as the async one.
-
-    A deferred-stream CustomStreamWrapper hands back a wrapper whose HTTP call has
-    not happened yet, so without fetch_sync_stream() the provider error surfaces on
-    first iteration, outside _completion's except block. The deployment is then never
-    marked failed and function_with_fallbacks never sees the error.
-    """
-    import litellm as _litellm
-
-    rate_limit_err = _litellm.RateLimitError(
-        message="Resource exhausted",
-        llm_provider="vertex_ai",
-        model="gemini-2.0-flash",
-    )
-    make_call_invocations = []
-
-    def failing_make_call(**kwargs):
-        make_call_invocations.append(kwargs)
-        raise rate_limit_err
-
-    router = _make_router_with_vertex_and_fallback()
-    deferred_wrapper = _make_deferred_stream_wrapper(failing_make_call)
-
-    with patch("litellm.completion", return_value=deferred_wrapper):
-        with pytest.raises(_litellm.RateLimitError):
-            router._completion(
-                model="vertex_ai/gemini-2.0-flash",
-                messages=[{"role": "user", "content": "Hello"}],
-                stream=True,
-                specific_deployment=router.model_list[0],
-            )
-
-    assert len(make_call_invocations) == 1, (
-        "the deferred HTTP call must run inside _completion's try block; "
-        "without the eager fetch_sync_stream() fix it is deferred to first iteration"
-    )
-
-
-def test_completion_deferred_stream_skipped_when_stream_already_set():
-    """A non-deferred sync provider already has completion_stream populated, so the
-    eager fetch must be skipped and make_call left untouched.
-    """
-    from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
-
-    def would_fail(**kwargs):
-        raise RuntimeError("should not be called")
-
-    logging_obj = MagicMock()
-    logging_obj.model_call_details = {"litellm_params": {}}
-    already_set_stream = iter([])
-
-    already_set_wrapper = CustomStreamWrapper(
-        completion_stream=already_set_stream,
-        model="openai/gpt-4o",
-        logging_obj=logging_obj,
-        custom_llm_provider="openai",
-        make_call=would_fail,
-    )
-
-    router = litellm.Router(
-        model_list=[
-            {
-                "model_name": "my-model",
-                "litellm_params": {"model": "openai/gpt-4o", "api_key": "sk-fake"},
-            }
-        ],
-    )
-
-    with patch("litellm.completion", return_value=already_set_wrapper):
-        result = router._completion(
-            model="openai/gpt-4o",
-            messages=[{"role": "user", "content": "Hello"}],
-            stream=True,
-            specific_deployment=router.model_list[0],
-        )
-
-    assert result is not None, "should return a streaming wrapper without errors"
-    assert already_set_wrapper.completion_stream is already_set_stream, "completion_stream must not be re-fetched"
+    request: Final = {
+        "model": "stream-open-error", "messages": [{"role": "user", "content": "Hello"}], "stream": True
+    }
+    try:
+        with pytest.raises(litellm.RateLimitError) as exc_info:
+            router.completion(**request) if sync_mode else await router.acompletion(**request)
+        provider_headers: Final = exc_info.value.litellm_response_headers
+        assert {key: provider_headers[key] for key in headers} == headers
+        active: Final = dict(router.cooldown_cache.get_active_cooldowns(["stream-open-error"], None))
+        assert active["stream-open-error"]["cooldown_time"] == 15
+        assert str(active["stream-open-error"]["status_code"]) == "429"
+        assert route.call_count == 1
+    finally:
+        router.reset()
 
 
 class TestAdvisorSubCallCooldown:

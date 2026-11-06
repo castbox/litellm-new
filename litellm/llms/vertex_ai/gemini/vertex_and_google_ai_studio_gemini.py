@@ -6,7 +6,6 @@ import re
 import time
 from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
-from functools import partial
 from typing import TYPE_CHECKING, Any, Final, Literal, Optional, Union, cast, get_args
 
 import httpx
@@ -2712,7 +2711,8 @@ async def make_call(
     data: str,
     model: str,
     messages: list,
-    logging_obj,
+    logging_obj: LoggingClass,
+    timeout: float | httpx.Timeout | None = None,
 ):
     if gemini_client is not None:
         client = gemini_client
@@ -2722,7 +2722,9 @@ async def make_call(
         )
 
     try:
-        response: Final = await client.post(api_base, headers=headers, data=data, stream=True, logging_obj=logging_obj)
+        response: Final = await client.post(
+            api_base, headers=headers, data=data, stream=True, logging_obj=logging_obj, timeout=timeout
+        )
         response.raise_for_status()
     except httpx.HTTPStatusError as e:
         exception_string: Final = str(await e.response.aread())
@@ -2764,14 +2766,17 @@ def make_sync_call(
     data: str,
     model: str,
     messages: list,
-    logging_obj,
+    logging_obj: LoggingClass,
+    timeout: float | httpx.Timeout | None = None,
 ):
     if gemini_client is not None:
         client = gemini_client
     if client is None:
         client = HTTPHandler()  # Create a new client if none provided
 
-    response: Final = client.post(api_base, headers=headers, data=data, stream=True, logging_obj=logging_obj)
+    response: Final = client.post(
+        api_base, headers=headers, data=data, stream=True, logging_obj=logging_obj, timeout=timeout
+    )
 
     if response.status_code != 200 and response.status_code != 201:
         raise VertexAIError(
@@ -2815,7 +2820,7 @@ class VertexLLM(VertexBase):
         data: dict,
         timeout: float | httpx.Timeout | None,
         encoding: object,
-        logging_obj,
+        logging_obj: LoggingClass,
         stream,
         optional_params: dict,
         litellm_params: dict,
@@ -2878,18 +2883,19 @@ class VertexLLM(VertexBase):
         )
 
         request_body_str: Final = json.dumps(request_body)
+        completion_stream: Final = await make_call(
+            client=litellm.module_level_aclient,
+            gemini_client=(client if client is not None and isinstance(client, AsyncHTTPHandler) else None),
+            api_base=api_base,
+            headers=headers,
+            data=request_body_str,
+            model=model,
+            messages=messages,
+            logging_obj=logging_obj,
+            timeout=timeout,
+        )
         streaming_response: Final = CustomStreamWrapper(
-            completion_stream=None,
-            make_call=partial(
-                make_call,
-                gemini_client=(client if client is not None and isinstance(client, AsyncHTTPHandler) else None),
-                api_base=api_base,
-                headers=headers,
-                data=request_body_str,
-                model=model,
-                messages=messages,
-                logging_obj=logging_obj,
-            ),
+            completion_stream=completion_stream,
             model=model,
             custom_llm_provider="vertex_ai_beta",
             logging_obj=logging_obj,
@@ -3022,7 +3028,7 @@ class VertexLLM(VertexBase):
             "vertex_ai", "vertex_ai_beta", "gemini"
         ],  # if it's vertex_ai or gemini (google ai studio)
         encoding: object,
-        logging_obj,
+        logging_obj: LoggingClass,
         optional_params: dict,
         acompletion: bool,
         timeout: float | httpx.Timeout | None,
@@ -3154,18 +3160,19 @@ class VertexLLM(VertexBase):
         ## SYNC STREAMING CALL ##
         if stream is True:
             request_data_str: Final = json.dumps(data)
+            completion_stream: Final = make_sync_call(
+                client=litellm.module_level_client,
+                gemini_client=(client if client is not None and isinstance(client, HTTPHandler) else None),
+                api_base=url,
+                data=request_data_str,
+                model=model,
+                messages=messages,
+                logging_obj=logging_obj,
+                headers=headers,
+                timeout=timeout,
+            )
             streaming_response: Final = CustomStreamWrapper(
-                completion_stream=None,
-                make_call=partial(
-                    make_sync_call,
-                    gemini_client=(client if client is not None and isinstance(client, HTTPHandler) else None),
-                    api_base=url,
-                    data=request_data_str,
-                    model=model,
-                    messages=messages,
-                    logging_obj=logging_obj,
-                    headers=headers,
-                ),
+                completion_stream=iter(completion_stream),
                 model=model,
                 custom_llm_provider="vertex_ai_beta",
                 logging_obj=logging_obj,

@@ -2786,13 +2786,6 @@ class Router:
                         llm_provider="",
                     )
 
-            if (
-                isinstance(response, CustomStreamWrapper)
-                and response.completion_stream is None
-                and response.make_call is not None
-            ):
-                response.fetch_sync_stream()
-
             # Wrap streaming responses so MidStreamFallbackError (raised
             # during iteration) triggers the Router's fallback chain.
             if isinstance(response, CustomStreamWrapper):
@@ -3981,13 +3974,6 @@ class Router:
                             model=model,
                             llm_provider="",
                         )
-
-                if (
-                    isinstance(response, CustomStreamWrapper)
-                    and response.completion_stream is None
-                    and response.make_call is not None
-                ):
-                    await response.fetch_stream()
 
                 self.success_calls[model_name] += 1
                 verbose_router_logger.info("litellm.acompletion(model=%s)\x1b[32m 200 OK\x1b[0m", model_name)

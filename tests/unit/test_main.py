@@ -7,7 +7,7 @@ import json
 import logging
 import os
 import urllib.parse
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from importlib import import_module
@@ -44,12 +44,14 @@ from litellm.types.utils import Delta, ModelResponseStream, StandardCallbackDyna
     ("status_code", "error_type"),
     [(429, litellm.RateLimitError), (400, litellm.BadRequestError), (503, litellm.ServiceUnavailableError)],
 )
-async def test_acompletion_deferred_vertex_http_error_is_mapped_before_stream_is_returned(
+@pytest.mark.parametrize("sync_mode", [False, True])
+async def test_vertex_stream_http_error_is_mapped_before_stream_is_returned(
     respx_mock: respx.MockRouter,
     monkeypatch: pytest.MonkeyPatch,
     vertex_adc_credentials: None,
     status_code: int,
     error_type: type[Exception],
+    sync_mode: bool,
 ) -> None:
     monkeypatch.setattr(litellm, "disable_aiohttp_transport", True)
     route: Final = respx_mock.post(url__regex=r"https://aiplatform.googleapis.com/.*:streamGenerateContent.*").respond(
@@ -58,45 +60,86 @@ async def test_acompletion_deferred_vertex_http_error_is_mapped_before_stream_is
         json={"error": {"code": status_code, "message": "scripted provider failure"}},
     )
 
+    request: Final = {
+        "model": "vertex_ai/gemini-3.5-flash-lite",
+        "vertex_project": "deferred-stream-test",
+        "vertex_location": "global",
+        "messages": [{"role": "user", "content": "Hello"}],
+        "stream": True,
+        "max_retries": 0,
+        "num_retries": 0,
+    }
     with pytest.raises(error_type) as exc_info:
-        await acompletion(
-            model="vertex_ai/gemini-3.5-flash-lite",
-            vertex_project="deferred-stream-test",
-            vertex_location="global",
-            messages=[{"role": "user", "content": "Hello"}],
-            stream=True,
-            max_retries=0,
-            num_retries=0,
-        )
+        completion(**request) if sync_mode else await acompletion(**request)
 
     assert exc_info.value.status_code == status_code
     assert exc_info.value.litellm_response_headers["retry-after"] == "7"
     assert route.call_count == 1
 
 
-async def test_acompletion_opens_deferred_vertex_stream_once_without_consuming_chunks(
-    respx_mock: respx.MockRouter, monkeypatch: pytest.MonkeyPatch, vertex_adc_credentials: None
+@pytest.mark.parametrize("sync_mode", [False, True])
+async def test_vertex_opens_stream_once_without_consuming_chunks(
+    respx_mock: respx.MockRouter, monkeypatch: pytest.MonkeyPatch, vertex_adc_credentials: None, sync_mode: bool
 ) -> None:
+    from threading import Event
+
     monkeypatch.setattr(litellm, "disable_aiohttp_transport", True)
-    route: Final = respx_mock.post(url__regex=r"https://aiplatform.googleapis.com/.*:streamGenerateContent.*").respond(
-        200,
-        headers={"content-type": "text/event-stream"},
-        text='data: {"candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"STOP"}]}\n\n',
+    consumer_started: Final = Event()
+    payload: Final = (
+        b'data: {"candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"STOP"}]}\n\n'
     )
-    response: Final = await acompletion(
-        model="vertex_ai/gemini-3.5-flash-lite",
-        vertex_project="deferred-stream-success-test",
-        vertex_location="global",
-        messages=[{"role": "user", "content": "Hello"}],
-        stream=True,
-        max_retries=0,
+
+    class ProviderBody(httpx.SyncByteStream, httpx.AsyncByteStream):
+        def __iter__(self) -> Iterator[bytes]:
+            assert consumer_started.is_set(), "SDK read the response body before returning the stream"
+            yield payload
+
+        async def __aiter__(self) -> AsyncIterator[bytes]:
+            assert consumer_started.is_set(), "SDK read the response body before returning the stream"
+            yield payload
+
+    route: Final = respx_mock.post(url__regex=r"https://aiplatform.googleapis.com/.*:streamGenerateContent.*").mock(
+        return_value=httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=ProviderBody())
     )
+    request: Final = {
+        "model": "vertex_ai/gemini-3.5-flash-lite",
+        "vertex_project": "deferred-stream-success-test",
+        "vertex_location": "global",
+        "messages": [{"role": "user", "content": "Hello"}],
+        "stream": True,
+        "max_retries": 0,
+    }
+    response: Final = completion(**request) if sync_mode else await acompletion(**request)
 
     assert isinstance(response, litellm.CustomStreamWrapper)
     assert route.call_count == 1
     assert response.sent_first_chunk is False
-    chunks: Final = [chunk async for chunk in response]
+    consumer_started.set()
+    chunks: Final = list(response) if sync_mode else [chunk async for chunk in response]
     assert "".join(chunk.choices[0].delta.content or "" for chunk in chunks) == "ok"
+    assert route.call_count == 1
+
+
+@pytest.mark.parametrize("model", ["text-completion-codestral/codestral-latest", "predibase/test-deployment"])
+async def test_legacy_provider_stream_http_error_is_raised_during_sdk_call(
+    respx_mock: respx.MockRouter, monkeypatch: pytest.MonkeyPatch, model: str
+) -> None:
+    monkeypatch.setattr(litellm, "disable_aiohttp_transport", True)
+    route: Final = respx_mock.post(url__regex=r"https://stream-provider.test/.*").respond(
+        429, json={"error": "Resource exhausted"}
+    )
+    with pytest.raises(litellm.RateLimitError) as exc_info:
+        await acompletion(
+            model=model,
+            api_base="https://stream-provider.test/v1/fim/completions",
+            api_key="test-key",
+            predibase_tenant_id="test-tenant",
+            messages=[{"role": "user", "content": "Hello"}],
+            stream=True,
+            max_retries=0,
+            num_retries=0,
+        )
+    assert exc_info.value.status_code == 429
     assert route.call_count == 1
 
 

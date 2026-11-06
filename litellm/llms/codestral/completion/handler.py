@@ -3,7 +3,6 @@
 
 import json
 from collections.abc import Callable
-from functools import partial
 from typing import Final, Protocol
 
 import httpx
@@ -103,8 +102,9 @@ async def make_call(
     model: str,
     messages: list,
     logging_obj,
+    timeout: float | httpx.Timeout | None = None,
 ):
-    response: Final = await client.post(api_base, headers=headers, data=data, stream=True)
+    response: Final = await client.post(api_base, headers=headers, data=data, stream=True, timeout=timeout)
 
     if response.status_code != 200:
         raise TextCompletionCodestralError(status_code=response.status_code, message=response.text)
@@ -441,17 +441,18 @@ class CodestralTextCompletion:
     ) -> CustomStreamWrapper:
         data["stream"] = True
 
+        completion_stream: Final = await make_call(
+            client=litellm.module_level_aclient,
+            api_base=api_base,
+            headers=headers,
+            data=json.dumps(data),
+            model=model,
+            messages=messages,
+            logging_obj=logging_obj,
+            timeout=timeout,
+        )
         streamwrapper: Final = CustomStreamWrapper(
-            completion_stream=None,
-            make_call=partial(
-                make_call,
-                api_base=api_base,
-                headers=headers,
-                data=json.dumps(data),
-                model=model,
-                messages=messages,
-                logging_obj=logging_obj,
-            ),
+            completion_stream=completion_stream,
             model=model,
             custom_llm_provider="text-completion-codestral",
             logging_obj=logging_obj,

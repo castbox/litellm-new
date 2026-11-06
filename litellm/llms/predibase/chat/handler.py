@@ -3,7 +3,6 @@
 
 import json
 from collections.abc import Callable
-from functools import partial
 from typing import Final
 
 import httpx
@@ -261,18 +260,18 @@ class PredibaseChatCompletion:
     ) -> CustomStreamWrapper:
         data["stream"] = True
 
+        completion_stream: Final = await make_call(
+            client=litellm.module_level_aclient,
+            api_base=api_base,
+            headers=headers,
+            data=json.dumps(data),
+            model=model,
+            messages=messages,
+            logging_obj=logging_obj,
+            timeout=timeout,
+        )
         streamwrapper: Final = CustomStreamWrapper(
-            completion_stream=None,
-            make_call=partial(
-                make_call,
-                api_base=api_base,
-                headers=headers,
-                data=json.dumps(data),
-                model=model,
-                messages=messages,
-                logging_obj=logging_obj,
-                timeout=timeout,
-            ),
+            completion_stream=completion_stream,
             model=model,
             custom_llm_provider="predibase",
             logging_obj=logging_obj,

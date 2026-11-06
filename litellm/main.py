@@ -736,8 +736,6 @@ async def acompletion(
             response.set_logging_event_loop(
                 loop=loop
             )  # sets the logging event loop if the user does sync streaming (e.g. on proxy for sagemaker calls)
-            # Deferred HTTP failures must reach the SDK callbacks before the Router retries.
-            await response.fetch_stream()
         return response
     except Exception as e:
         custom_llm_provider = custom_llm_provider or "openai"
