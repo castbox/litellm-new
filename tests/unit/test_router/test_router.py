@@ -10044,7 +10044,6 @@ async def test_vertex_429_cools_each_deployment_before_retry_and_advances_order(
 
         assert "".join(chunk.choices[0].delta.content or "" for chunk in chunks) == "ok"
         assert (first.call_count, second.call_count, healthy.call_count) == (1, 1, 1)
-        assert [call.request.extensions["timeout"]["read"] for call in respx_mock.calls] == [5, 5, 8]
         assert set(active) == {"pt-first", "pt-second"}
         assert {value["cooldown_time"] for value in active.values()} == {15}
         assert {str(value["status_code"]) for value in active.values()} == {"429"}

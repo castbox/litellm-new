@@ -102,9 +102,8 @@ async def make_call(
     model: str,
     messages: list,
     logging_obj,
-    timeout: float | httpx.Timeout | None = None,
 ):
-    response: Final = await client.post(api_base, headers=headers, data=data, stream=True, timeout=timeout)
+    response: Final = await client.post(api_base, headers=headers, data=data, stream=True)
 
     if response.status_code != 200:
         raise TextCompletionCodestralError(status_code=response.status_code, message=response.text)
@@ -449,7 +448,6 @@ class CodestralTextCompletion:
             model=model,
             messages=messages,
             logging_obj=logging_obj,
-            timeout=timeout,
         )
         streamwrapper: Final = CustomStreamWrapper(
             completion_stream=completion_stream,

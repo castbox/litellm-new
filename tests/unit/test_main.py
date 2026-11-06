@@ -33,7 +33,7 @@ from litellm.litellm_core_utils.core_helpers import get_litellm_metadata_from_kw
 from litellm.litellm_core_utils.get_litellm_params import stored_control_options
 from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLogging
 from litellm.litellm_core_utils.prompt_templates.factory import anthropic_messages_pt
-from litellm.llms.custom_httpx.http_handler import HTTPHandler
+from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
 from litellm.types.litellm_params import ControlOptions
 from litellm.types.llms.openai import AllMessageValues, HttpxBinaryResponseContent
 from litellm.types.prompts.init_prompts import PromptSpec
@@ -101,6 +101,8 @@ async def test_vertex_opens_stream_once_without_consuming_chunks(
     route: Final = respx_mock.post(url__regex=r"https://aiplatform.googleapis.com/.*:streamGenerateContent.*").mock(
         return_value=httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=ProviderBody())
     )
+    client_timeout: Final = httpx.Timeout(37)
+    http_client: Final = HTTPHandler(timeout=client_timeout) if sync_mode else AsyncHTTPHandler(timeout=client_timeout)
     request: Final = {
         "model": "vertex_ai/gemini-3.5-flash-lite",
         "vertex_project": "deferred-stream-success-test",
@@ -108,16 +110,26 @@ async def test_vertex_opens_stream_once_without_consuming_chunks(
         "messages": [{"role": "user", "content": "Hello"}],
         "stream": True,
         "max_retries": 0,
+        "timeout": 5,
+        "client": http_client,
     }
-    response: Final = completion(**request) if sync_mode else await acompletion(**request)
+    try:
+        response: Final = completion(**request) if sync_mode else await acompletion(**request)
 
-    assert isinstance(response, litellm.CustomStreamWrapper)
-    assert route.call_count == 1
-    assert response.sent_first_chunk is False
-    consumer_started.set()
-    chunks: Final = list(response) if sync_mode else [chunk async for chunk in response]
-    assert "".join(chunk.choices[0].delta.content or "" for chunk in chunks) == "ok"
-    assert route.call_count == 1
+        assert isinstance(response, litellm.CustomStreamWrapper)
+        assert route.call_count == 1
+        assert route.calls[0].request.extensions["timeout"]["read"] == client_timeout.read
+        assert response.sent_first_chunk is False
+        consumer_started.set()
+        chunks: Final = list(response) if sync_mode else [chunk async for chunk in response]
+        assert "".join(chunk.choices[0].delta.content or "" for chunk in chunks) == "ok"
+        assert route.call_count == 1
+
+    finally:
+        if isinstance(http_client, HTTPHandler):
+            http_client.close()
+        else:
+            await http_client.close()
 
 
 @pytest.mark.parametrize("model", ["text-completion-codestral/codestral-latest", "predibase/test-deployment"])
@@ -350,7 +362,7 @@ async def test_url_with_format_param_openai(model, sync_mode):
 @pytest.mark.asyncio
 async def test_url_with_format_param(model, sync_mode, monkeypatch):
     from litellm import acompletion, completion
-    from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
+    from litellm.llms.custom_httpx.http_handler import HTTPHandler
 
     if sync_mode:
         client = HTTPHandler()

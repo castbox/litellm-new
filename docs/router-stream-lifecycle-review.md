@@ -8,7 +8,7 @@
 
 本次把 HTTP 建流统一放回 provider 适配器。Vertex 的同步和异步实现，以及存在同类延迟建流的 Codestral、Predibase 异步实现，均在返回 `CustomStreamWrapper` 前完成 HTTP 请求和状态校验。Router 的同步、异步建流代码和此前在 `main.py` 增加的调用全部移除
 
-同时确认 Vertex 的 `timeout` 参数没有传给建流 HTTP 请求。配置 `stream_timeout=5/8` 的请求在测试中实际使用共享客户端的 `read=6000`。本次在 Vertex 同步、异步和 Codestral 异步建流时传递已解析的 timeout；Predibase 已经传递该参数
+`1c81558c` 同时新增了 Vertex 同步、异步和 Codestral 异步建流时的 timeout 透传。后续压测出现大量读取超时，为隔离这一行为变化，当前版本已撤回这三处新增透传，恢复使用 HTTP client 自身的超时设置。保留 provider 返回 wrapper 前完成 HTTP 建流及状态校验的修复。Predibase 在该提交之前就已透传 timeout，保留原有行为
 
 ## 执行链与职责
 
@@ -18,7 +18,7 @@
 | 尝试调度 | `async_function_with_retries()` / `function_with_retries()` | 解析重试预算，发起下一次尝试 |
 | 选择 deployment | `async_get_available_deployment()` / `get_available_deployment()` | 应用访问、健康、冷却、order 和路由策略过滤 |
 | 调用前检查 | `Router._acompletion()` / `_completion()` | 准备参数和客户端，执行调用前检查；异步路径管理并发槽 |
-| HTTP 建流 | provider 适配器 | 复用客户端，传递 timeout，校验 HTTP 状态，返回可消费的流 |
+| HTTP 建流 | provider 适配器 | 复用客户端，校验 HTTP 状态，返回可消费的流；Vertex 和 Codestral 恢复使用客户端自身的超时设置 |
 | SDK 异常处理 | `main.py`、`utils.client` | 把 provider 错误映射为标准异常，执行失败 hook 和回调 |
 | 冷却 | `deployment_callback_on_failure()`、`CooldownCache` | 根据 deployment 配置、响应头和全局设置写入冷却 |
 | Router 错误处理 | `_acompletion()` / `_completion()` 的异常分支 | 记录失败 deployment 和重试配置，将异常交给调度层 |
@@ -50,7 +50,7 @@ deployment 的 `max_retries` 传入模型调用层。Router 的 `num_retries` �
 
 HTTP 建流成功之后的正文读取失败，走 `CustomStreamWrapper` 的消费阶段错误处理；其中失败回调由任务调度，和 SDK 建流失败时先完成同步冷却的顺序不同。Router 对已经输出内容的流也限制自动切换，避免拼接两个模型的答案
 
-`stream_timeout` 最终传到 HTTP 客户端后约束网络操作，包括读取等待；它不是模型组的总耗时预算，也不是固定的整个生成时长上限。多次尝试的累计时长及连接、认证等阶段仍需分别考虑
+此次撤回仅涉及 `1c81558c` 新增的三条流式 HTTP timeout 透传路径，不移除其他 provider 或非流式调用原有的超时约束。Vertex 和 Codestral 流式 HTTP 请求改用客户端自身的超时设置，不代表取消一切超时。线上净影响仍需相同负载下的对照测试确认
 
 `success_calls` 和 Router 的 `200 OK` 日志出现在建流成功之后、完整正文校验之前，不能单独证明最终有有效输出
 
@@ -60,7 +60,9 @@ HTTP 建流成功之后的正文读取失败，走 `CustomStreamWrapper` 的消�
 
 新增或替换的 HTTP 边界回归覆盖同步、异步 Vertex 的 400/429/503 映射，两个 order=5 目标的冷却与后续路由，响应头保留，以及 Codestral、Predibase 建流错误
 
-成功流测试使用在 SDK 返回前禁止读取的 HTTP body，验证不会提前消费正文，并检查请求总数为一次。Router 测试读取实际 HTTP request 的 timeout extensions，确认三次尝试分别使用 5、5、8 秒的 read timeout
+成功流测试使用在 SDK 返回前禁止读取的 HTTP body，验证不会提前消费正文，并检查请求总数为一次。撤回透传后，同步、异步成功流测试还注入了具有显式超时设置的 HTTP client，验证实际 HTTP request 保留客户端的超时设置。Router 的 429 回归继续验证失败回调、冷却和跨 order 恢复，不再要求 HTTP 使用 deployment 的 5、5、8 秒设置
+
+以下为原始流式修复提交的验证记录，撤回透传后的检查另见末尾
 
 把源码临时还原为 `77e8dfaa43` 后，14 个相关回归全部失败；恢复修复后全部通过。另一个空图片响应测试也在原始基线上失败，和此前确认的 4 个空文本响应测试一起作为已有失败单独记录
 
@@ -71,3 +73,7 @@ HTTP 建流成功之后的正文读取失败，走 `CustomStreamWrapper` 的消�
 使用 `BASE_REF=77e8dfaa436259cc9ffb550e62e837b86cfe7b3e make check`，相对线上源码基线的完整门禁通过，包括 Ruff、格式、type discipline、test quality、basedpyright 增量检查和循环导入检查。这不代表整条升级分支相对默认分支的已有门禁问题已经解决
 
 本次没有构建或发布镜像，没有修改线上配置，也没有执行生产压测。以上证据证明本地 HTTP 边界行为和相关回归结果，尚不构成生产吞吐、跨 Pod 冷却传播或最终请求成功率的实测结论
+
+## 撤回新增 timeout 透传的验证
+
+同步、异步 Vertex HTTP 错误映射、建流不预读正文、客户端超时保留、429 冷却及跨 order 恢复，以及 Codestral、Predibase 建流错误回归共 14 项通过。这些本地测试不证明取消透传后生产延迟一定改善
