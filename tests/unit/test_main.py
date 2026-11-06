@@ -40,6 +40,66 @@ from litellm.types.prompts.init_prompts import PromptSpec
 from litellm.types.utils import Delta, ModelResponseStream, StandardCallbackDynamicParams, StreamingChoices, Usage
 
 
+@pytest.mark.parametrize(
+    ("status_code", "error_type"),
+    [(429, litellm.RateLimitError), (400, litellm.BadRequestError), (503, litellm.ServiceUnavailableError)],
+)
+async def test_acompletion_deferred_vertex_http_error_is_mapped_before_stream_is_returned(
+    respx_mock: respx.MockRouter,
+    monkeypatch: pytest.MonkeyPatch,
+    vertex_adc_credentials: None,
+    status_code: int,
+    error_type: type[Exception],
+) -> None:
+    monkeypatch.setattr(litellm, "disable_aiohttp_transport", True)
+    route: Final = respx_mock.post(url__regex=r"https://aiplatform.googleapis.com/.*:streamGenerateContent.*").respond(
+        status_code,
+        headers={"retry-after": "7"},
+        json={"error": {"code": status_code, "message": "scripted provider failure"}},
+    )
+
+    with pytest.raises(error_type) as exc_info:
+        await acompletion(
+            model="vertex_ai/gemini-3.5-flash-lite",
+            vertex_project="deferred-stream-test",
+            vertex_location="global",
+            messages=[{"role": "user", "content": "Hello"}],
+            stream=True,
+            max_retries=0,
+            num_retries=0,
+        )
+
+    assert exc_info.value.status_code == status_code
+    assert exc_info.value.litellm_response_headers["retry-after"] == "7"
+    assert route.call_count == 1
+
+
+async def test_acompletion_opens_deferred_vertex_stream_once_without_consuming_chunks(
+    respx_mock: respx.MockRouter, monkeypatch: pytest.MonkeyPatch, vertex_adc_credentials: None
+) -> None:
+    monkeypatch.setattr(litellm, "disable_aiohttp_transport", True)
+    route: Final = respx_mock.post(url__regex=r"https://aiplatform.googleapis.com/.*:streamGenerateContent.*").respond(
+        200,
+        headers={"content-type": "text/event-stream"},
+        text='data: {"candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"STOP"}]}\n\n',
+    )
+    response: Final = await acompletion(
+        model="vertex_ai/gemini-3.5-flash-lite",
+        vertex_project="deferred-stream-success-test",
+        vertex_location="global",
+        messages=[{"role": "user", "content": "Hello"}],
+        stream=True,
+        max_retries=0,
+    )
+
+    assert isinstance(response, litellm.CustomStreamWrapper)
+    assert route.call_count == 1
+    assert response.sent_first_chunk is False
+    chunks: Final = [chunk async for chunk in response]
+    assert "".join(chunk.choices[0].delta.content or "" for chunk in chunks) == "ok"
+    assert route.call_count == 1
+
+
 @pytest.fixture(autouse=True)
 def clear_client_cache():
     """

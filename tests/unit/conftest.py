@@ -389,6 +389,22 @@ async def drained_logging_worker() -> None:
     await asyncio.wait_for(GLOBAL_LOGGING_WORKER.clear_queue(), timeout=10)
 
 
+@pytest.fixture
+def vertex_adc_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    from datetime import datetime
+
+    import google.auth
+    from google.oauth2.credentials import Credentials
+
+    def refresh_token(request: object, scopes: object) -> tuple[str, datetime]:
+        return "test-token", datetime.max
+
+    def default_credentials(scopes: object) -> tuple[Credentials, str]:
+        return Credentials(token="test-token", refresh_handler=refresh_token), "deferred-stream-test"
+
+    monkeypatch.setattr(google.auth, "default", default_credentials)
+
+
 def pytest_sessionfinish() -> None:
     for name in MODULE_LEVEL_CLIENTS:
         _close_handler_if_needed(litellm.__dict__.pop(name, None))

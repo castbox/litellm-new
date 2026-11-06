@@ -9973,6 +9973,87 @@ class TestRouterRequestTimeoutPropagation:
 # ---------------------------------------------------------------------------
 
 
+async def test_deferred_vertex_429_cools_each_deployment_before_retry_and_advances_order(
+    respx_mock: respx.MockRouter, monkeypatch: pytest.MonkeyPatch, vertex_adc_credentials: None
+) -> None:
+    monkeypatch.setattr(litellm, "disable_aiohttp_transport", True)
+    failure_events: Final[asyncio.Queue[object]] = asyncio.Queue()
+
+    class FailureEvents(CustomLogger):
+        async def async_log_failure_event(
+            self, kwargs: Mapping[str, object], response_obj: object, start_time: datetime, end_time: datetime
+        ) -> None:
+            failure_events.put_nowait(kwargs.get("exception"))
+
+    monkeypatch.setattr(litellm, "callbacks", [FailureEvents()])
+    router: Final = Router(
+        model_list=[
+            {
+                "model_name": "deferred-cooldown-test",
+                "litellm_params": {
+                    "model": "vertex_ai/gemini-3.5-flash-lite",
+                    "vertex_project": project,
+                    "vertex_location": "global",
+                    "order": order,
+                    "max_retries": 0,
+                    "num_retries": retries,
+                    "cooldown_time": cooldown,
+                },
+                "model_info": {"id": project},
+            }
+            for project, order, retries, cooldown in (
+                ("pt-first", 5, 1, 15),
+                ("pt-second", 5, 1, 15),
+                ("shared-capacity", 10, 0, 30),
+            )
+        ],
+        allowed_fails=0,
+        num_retries=0,
+        retry_after=0,
+        routing_strategy="latency-based-routing",
+        routing_strategy_args={"latency_buffer": 0.3},
+    )
+    first: Final = respx_mock.post(url__regex=r"https://aiplatform.googleapis.com/.*projects/pt-first/.*").respond(
+        429, headers={"retry-after": "7"}, json={"error": {"code": 429, "message": "Resource exhausted"}}
+    )
+    second: Final = respx_mock.post(url__regex=r"https://aiplatform.googleapis.com/.*projects/pt-second/.*").respond(
+        429, headers={"retry-after": "7"}, json={"error": {"code": 429, "message": "Resource exhausted"}}
+    )
+    healthy: Final = respx_mock.post(
+        url__regex=r"https://aiplatform.googleapis.com/.*projects/shared-capacity/.*"
+    ).respond(
+        200,
+        headers={"content-type": "text/event-stream"},
+        text='data: {"candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"STOP"}]}\n\n',
+    )
+
+    try:
+        response: Final = await router.acompletion(
+            model="deferred-cooldown-test", messages=[{"role": "user", "content": "Hello"}], stream=True
+        )
+        chunks: Final = [chunk async for chunk in response]
+        active: Final = dict(router.cooldown_cache.get_active_cooldowns(["pt-first", "pt-second"], None))
+
+        assert "".join(chunk.choices[0].delta.content or "" for chunk in chunks) == "ok"
+        assert (first.call_count, second.call_count, healthy.call_count) == (1, 1, 1)
+        assert set(active) == {"pt-first", "pt-second"}
+        assert {value["cooldown_time"] for value in active.values()} == {15}
+        assert {str(value["status_code"]) for value in active.values()} == {"429"}
+        assert failure_events.qsize() == 2
+        assert isinstance(failure_events.get_nowait(), litellm.RateLimitError)
+        assert isinstance(failure_events.get_nowait(), litellm.RateLimitError)
+
+        subsequent: Final = await router.acompletion(
+            model="deferred-cooldown-test", messages=[{"role": "user", "content": "Hello again"}], stream=True
+        )
+        subsequent_chunks: Final = [chunk async for chunk in subsequent]
+        assert "".join(chunk.choices[0].delta.content or "" for chunk in subsequent_chunks) == "ok"
+        assert (first.call_count, second.call_count, healthy.call_count) == (1, 1, 2)
+        assert failure_events.empty()
+    finally:
+        router.reset()
+
+
 def _make_deferred_stream_wrapper(make_call_fn):
     """Return a CustomStreamWrapper with completion_stream=None and the given make_call."""
     from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
@@ -10016,7 +10097,7 @@ def _make_router_with_vertex_and_fallback():
 async def test_acompletion_deferred_stream_error_propagates_through_acompletion():
     """Regression: a deferred-stream CustomStreamWrapper whose make_call raises a 429
     must propagate the exception from within _acompletion's except block so that
-    fail_calls is incremented (i.e., deployment cooldown fires) and the standard
+    fail_calls is incremented and the standard
     router fallback chain can handle it.
 
     Before the fix, the HTTP call happened inside __anext__ (outside the except block),
